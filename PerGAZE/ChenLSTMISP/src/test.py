@@ -2,6 +2,7 @@
 from opts import parse_opt
 from runtime import (setup, dataset, loader, model, evaluate, write_json, load_checkpoint,
                      restore_config)
+from parallel import load_model_state
 
 
 def main():
@@ -11,7 +12,7 @@ def main():
     checkpoint = load_checkpoint(path, device)
     manifest = restore_config(args, checkpoint, manifest)
     network = model(args, manifest, device, pretrained=False)
-    network.load_state_dict(checkpoint["model"])
+    load_model_state(network, checkpoint["model"])
     summary, rows = evaluate(network, loader(args, dataset(args, records, manifest, args.split)),
                              args, device, args.max_batches)
     write_json(args.log_root / f"evaluation_{args.split}.json", summary)

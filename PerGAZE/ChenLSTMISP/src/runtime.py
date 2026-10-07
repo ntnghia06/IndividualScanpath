@@ -10,6 +10,7 @@ from dataset.schema import make_file_manifest, read_records
 from models.baseline_attention import baseline
 from models.sampling import sample_scanpaths
 from utils.evaluation import Metrics, summarize
+from parallel import resolve_devices, wrap_model
 
 def write_json(path, value):
     path = Path(path)
@@ -24,6 +25,9 @@ def setup(args):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') if args.device == 'auto' else torch.device(args.device)
+    if args.device == 'auto' and args.gpu_ids and torch.cuda.is_available():
+        device = torch.device('cuda', args.gpu_ids[0])
+    device, args.gpu_ids = resolve_devices(device, args.gpu_ids, torch.cuda.device_count())
     train_records = read_records(args.train_file)
     validation_records = read_records(args.val_file)
     records = train_records + validation_records
@@ -44,7 +48,8 @@ def loader(args, data, shuffle=False):
     return DataLoader(data, batch_size=args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
 
 def model(args, manifest, device, pretrained=None):
-    return baseline(convLSTM_length=args.max_length, min_length=args.min_length, subject_num=len(manifest['subjects']), embedding_dim=args.embedding_dim, action_map_num=args.action_map_num, dropout=args.dropout, pretrained=args.pretrained if pretrained is None else pretrained).to(device)
+    network = baseline(convLSTM_length=args.max_length, min_length=args.min_length, subject_num=len(manifest['subjects']), embedding_dim=args.embedding_dim, action_map_num=args.action_map_num, dropout=args.dropout, pretrained=args.pretrained if pretrained is None else pretrained)
+    return wrap_model(network, device, args.gpu_ids)
 
 def move(batch, device):
     return {key: value.to(device, non_blocking=True) if torch.is_tensor(value) else value for key, value in batch.items()}

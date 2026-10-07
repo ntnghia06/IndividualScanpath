@@ -12,6 +12,7 @@ from opts import parse_opt
 from runtime import (setup, dataset, loader, model, move, forward, evaluate, write_json,
                      load_checkpoint, restore_config)
 from utils.evaluation import Metrics
+from parallel import model_state_dict, load_model_state, restore_cuda_rng
 
 
 def rl_loss(network, batch, args, metrics):
@@ -40,7 +41,8 @@ def smoke_test(args, records, manifest, device):
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
     checks = []
     for index in indices:
-        batch = move(collate_func([data[index]]), device)
+        smoke_batch = max(args.batch, len(args.gpu_ids), 1)
+        batch = move(collate_func([data[index] for _ in range(smoke_batch)]), device)
         network.train()
         optimizer.zero_grad(set_to_none=True)
         prediction = forward(network, batch)
@@ -67,7 +69,7 @@ def smoke_test(args, records, manifest, device):
     rl.backward()
     if any(p.grad is not None and not torch.isfinite(p.grad).all() for p in network.parameters()):
         raise ValueError("Nonfinite RL gradient")
-    result = {"device": str(device), "conditions": checks, "rl_loss": float(rl.detach()), "rl_reward": float(reward),
+    result = {"device": str(device), "gpu_ids": args.gpu_ids, "conditions": checks, "rl_loss": float(rl.detach()), "rl_reward": float(reward),
               "note": "Smoke uses random weights and a bounded sequence length; it is not a trained checkpoint."}
     write_json(args.log_root / "smoke_test.json", result)
     print("Smoke forward/backward/inference and policy-gradient checks passed", flush=True)
@@ -78,7 +80,8 @@ def main():
     records, manifest, device = setup(args)
     args.log_root.mkdir(parents=True, exist_ok=True)
     print({"records": len(records), "subjects": len(manifest["subjects"]), "splits": split_counts(records, manifest),
-           "device": str(device)}, flush=True)
+           "device": str(device), "gpu_ids": args.gpu_ids,
+           "data_parallel": len(args.gpu_ids) > 1, "global_batch": args.batch}, flush=True)
     if args.smoke_test:
         smoke_test(args, records, manifest, device)
         return
@@ -92,12 +95,12 @@ def main():
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     start, best = 0, -float("inf")
     if checkpoint:
-        network.load_state_dict(checkpoint["model"])
+        load_model_state(network, checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         start, best = checkpoint["epoch"] + 1, checkpoint["best_metric"]
         torch.set_rng_state(checkpoint["rng_cpu"].cpu())
         if device.type == "cuda" and checkpoint.get("rng_cuda"):
-            torch.cuda.set_rng_state_all([state.cpu() for state in checkpoint["rng_cuda"]])
+            restore_cuda_rng(checkpoint["rng_cuda"])
     write_json(args.log_root / "manifest.json", manifest)
     config = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
     write_json(args.log_root / "hparams.json", config)
@@ -137,7 +140,7 @@ def main():
         score = 2 * a * b / (a + b) if a + b else 0.
         improved = score > best
         best = max(best, score)
-        state = {"model": network.state_dict(), "optimizer": optimizer.state_dict(), "epoch": epoch,
+        state = {"model": model_state_dict(network), "optimizer": optimizer.state_dict(), "epoch": epoch,
                  "best_metric": best, "manifest": manifest, "config": config,
                  "rng_cpu": torch.get_rng_state(),
                  "rng_cuda": torch.cuda.get_rng_state_all() if device.type == "cuda" else []}

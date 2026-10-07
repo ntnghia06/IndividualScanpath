@@ -88,3 +88,14 @@ writes `evaluation_validation.json` and `predictions_validation.json`. This file
 is also used to select the best checkpoint during training. Use `--split train`
 or `--split all` only for diagnostic evaluation. No third held-out test set is
 created. Checkpoints from the former 80/10/10 split require a new training run.
+
+## Kaggle: two GPUs with DataParallel
+
+Open `kaggle_chenlstm_2gpu.ipynb` in Kaggle, select GPU T4 x2, enable Internet
+and attach the PerGAZE dataset. The public GitHub repository needs no token.
+Use `--device cuda:0 --gpu_ids 0 1 --batch 4`; batch is the global batch,
+approximately two samples per GPU. With no `--gpu_ids`, all visible CUDA GPUs
+are selected automatically. Train, RL, validation and test use the same wrapper.
+A small final batch may use fewer devices. Checkpoints save the unwrapped model
+state and work with one or two GPUs. CUDA RNG restoration supports fewer GPUs.
+Console startup reports selected GPUs and whether DataParallel is active.

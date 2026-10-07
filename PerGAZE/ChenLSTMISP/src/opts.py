@@ -16,6 +16,7 @@ def parse_opt(description="Train unified PerGAZE"):
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", default="auto", help="auto, cpu or cuda:0")
+    parser.add_argument("--gpu_ids", type=int, nargs="+", help="Visible CUDA IDs, e.g. 0 1; default uses all visible GPUs")
     parser.add_argument("--batch", type=int, default=2)
     parser.add_argument("--workers", type=int, default=0, help="0 works on Windows; increase on Linux")
     parser.add_argument("--epoch", type=int, default=30)
