@@ -42,10 +42,10 @@ def dataset(args, records, manifest, split):
     cls, extra = (PerGAZE, {})
     return cls(records, manifest, args.img_dir, args.att_dir, split=split, max_length=args.max_length, blur_sigma=args.blur_sigma, **extra)
 
-def loader(args, data, shuffle=False):
+def loader(args, data, shuffle=False, evaluation=False):
     if not len(data):
         raise ValueError('The requested split is empty')
-    return DataLoader(data, batch_size=args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
+    return DataLoader(data, batch_size=args.test_batch if evaluation else args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
 
 def model(args, manifest, device, pretrained=None):
     network = baseline(convLSTM_length=args.max_length, min_length=args.min_length, subject_num=len(manifest['subjects']), embedding_dim=args.embedding_dim, action_map_num=args.action_map_num, dropout=args.dropout, pretrained=args.pretrained if pretrained is None else pretrained)

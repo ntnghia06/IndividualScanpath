@@ -12,7 +12,7 @@ def main():
     manifest = restore_config(args, checkpoint, manifest)
     network = model(args, manifest, device, pretrained=False)
     network.load_state_dict(checkpoint["model"])
-    summary, rows = evaluate(network, loader(args, dataset(args, records, manifest, args.split)),
+    summary, rows = evaluate(network, loader(args, dataset(args, records, manifest, args.split), evaluation=True),
                              args, device, args.max_batches)
     write_json(args.log_root / f"evaluation_{args.split}.json", summary)
     write_json(args.log_root / f"predictions_{args.split}.json", rows)

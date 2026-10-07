@@ -1,5 +1,7 @@
 import argparse
+import sys
 from pathlib import Path
+from presets import preset_defaults
 
 PROJECT = Path(__file__).resolve().parents[5]
 DATASET = PROJECT / "dataset/PerGAZED/dataset"
@@ -7,7 +9,10 @@ RUN = Path(__file__).resolve().parents[1] / "runs"
 
 
 def parse_opt(description="Train unified PerGAZE"):
-    parser = argparse.ArgumentParser(description=description)
+    selection = argparse.ArgumentParser(add_help=False)
+    selection.add_argument("--hyperparam_preset", choices=("air", "coco", "air_run", "coco_run"), default="air")
+    selected, _ = selection.parse_known_args()
+    parser = argparse.ArgumentParser(description=description, parents=[selection])
     parser.add_argument("--train_file", "--data_file", dest="train_file", type=Path, default=DATASET / "train.json")
     parser.add_argument("--val_file", type=Path, default=DATASET / "test_seen.json")
     parser.add_argument("--img_dir", type=Path, default=DATASET / "images")
@@ -41,11 +46,19 @@ def parse_opt(description="Train unified PerGAZE"):
     parser.add_argument("--eval_repeat_num", type=int, default=1)
     parser.add_argument("--greedy", action="store_true")
     parser.add_argument("--smoke_test", action="store_true", help="Forward/backward and inference on one real record per condition")
+    parser.add_argument("--test_batch", type=int, default=1)
+    parser.add_argument("--warmup_epoch", type=int, default=1)
+    parser.add_argument("--no_eval_epoch", type=int)
+    parser.add_argument("--supervised_save", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--rl_baseline", choices=("mean", "leave_one_out"))
+    parser.set_defaults(**preset_defaults(selected.hyperparam_preset))
     args = parser.parse_args()
+    args._provided_hyperparams = [token.split("=")[0].lstrip("-").replace("-", "_")
+                                  for token in sys.argv[1:] if token.startswith("--")]
     args.model = "chenlstm"
     if args.log_root is None:
         args.log_root = RUN
-    if args.batch < 1 or args.max_length < 1 or not 0 <= args.min_length <= args.max_length:
+    if args.batch < 1 or args.test_batch < 1 or args.warmup_epoch < 0 or args.epoch < 1 or args.start_rl_epoch < 0 or args.max_length < 1 or not 0 <= args.min_length <= args.max_length:
         parser.error("Invalid batch or scanpath length")
     if args.start_rl_epoch < args.epoch and args.rl_sample_number < 2:
         parser.error("RL requires at least two samples for a baseline")

@@ -48,10 +48,10 @@ def dataset(args, records, manifest, split):
     extra = {'text_embeddings': args.text_embeddings, 'max_text_length': args.max_text_length}
     return cls(records, manifest, args.img_dir, args.att_dir, split=split, max_length=args.max_length, blur_sigma=args.blur_sigma, **extra)
 
-def loader(args, data, shuffle=False):
+def loader(args, data, shuffle=False, evaluation=False):
     if not len(data):
         raise ValueError('The requested split is empty')
-    return DataLoader(data, batch_size=args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
+    return DataLoader(data, batch_size=args.test_batch if evaluation else args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
 
 def model(args, manifest, device, pretrained=None):
     from models.gazeformer.model import GazeformerISP

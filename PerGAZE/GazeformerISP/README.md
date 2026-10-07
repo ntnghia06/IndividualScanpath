@@ -71,11 +71,21 @@ python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py --split validati
 python -m unittest discover -s src/IndividualScanpath/PerGAZE/GazeformerISP/tests
 ```
 
-Default training: batch 2, 30 epochs, supervised for epochs 0-19 and ScanMatch
-policy gradients from epoch 20. `--device auto` chooses CUDA if available;
-`--device cpu` is supported. `--no-pretrained` runs with random backbone weights
-without downloading weights. `--workers 0` is Windows-safe. `--max_batches N`
-and `--eval_max_batches N` bound functional runs; zero processes the full split.
+Training hyperparameters default to `--hyperparam_preset air`, matching the
+original AiR `opts.py`. `coco` matches COCO `opts.py`; `air_run` and `coco_run`
+include overrides from their original `bash/train.sh`. CLI arguments override
+the selected preset. Data files, subject mapping and the chosen image geometry
+remain PerGAZE-specific. Batch counts individual scanpaths, whereas the original
+loaders count groups of observers.
+
+Both models use original one-epoch warmup, linear supervised LR decay and
+linear RL LR decay with multiplier 0.1. Gaussian target blur is disabled.
+Validation uses separate `--test_batch 1`, with the preset's `no_eval_epoch`.
+RL defaults to the original all-sample mean baseline. `clip=-1` in Gazeformer
+presets disables gradient clipping. Schedulers are saved in checkpoints.
+`--device auto` selects CUDA if available. `--no-pretrained` uses random
+backbone weights. `--workers 0` is Windows-safe. Batch limits remain available
+for functional checks; zero processes the full split.
 
 Default output is this model's own `runs/` directory. It contains manifests,
 hyperparameters, validation/epoch reports, `checkpoints/checkpoint.pth`,
@@ -119,3 +129,38 @@ writes `evaluation_validation.json` and `predictions_validation.json`. This file
 is also used to select the best checkpoint during training. Use `--split train`
 or `--split all` only for diagnostic evaluation. No third held-out test set is
 created. Checkpoints from the former 80/10/10 split require a new training run.
+
+## Hyperparameter presets
+
+Choose the original source's defaults or its published run script:
+
+```powershell
+python src/train.py --hyperparam_preset air
+python src/train.py --hyperparam_preset coco
+python src/train.py --hyperparam_preset air_run
+python src/train.py --hyperparam_preset coco_run
+```
+
+| Preset | Epochs | Start RL (zero-based) | Train batch | Max/min fixations | Seed | Val after epoch index |
+| --- | --- | --- | --- | --- | --- | --- |
+| air | 40 | 25 | 1 | 16 / 1 | 0 | 5 |
+| coco | 40 | 25 | 3 | 7 / 1 | 0 | 5 |
+| air_run | 40 | 25 | 1 | 16 / 1 | 10 | 5 |
+| coco_run | 40 | 20 | 3 | 7 / 1 | 10 | 5 |
+
+Gazeformer head dropout is 0.4, encoder dropout 0.1 and decoder dropout 0.2.
+The requested 1024x768 image / 512x352 scanpath geometry is preserved.
+
+`epoch > no_eval_epoch` enables validation. `checkpoint.pth` is still saved
+at every epoch even if validation is deferred; `best.pth` is saved only after
+validation improves. `supervised.pth` is saved immediately before RL by default,
+instead of copying the entire run directory like the original scripts.
+Reports now include learning rate and validation score.
+
+Old fixed-LR checkpoints require a fresh run. Resume restores saved training
+hyperparameters and scheduler state; explicit conflicting hyperparameters or
+a changed batch limit are rejected. `--epoch` can extend the target duration.
+Evaluation can use an old checkpoint because it does not resume the scheduler.
+For a two-GPU ChenLSTM run, `--batch 4` is a hardware override, not the original
+preset batch. Validation batch 1 uses only one GPU per batch; override
+`--test_batch` if desired.
