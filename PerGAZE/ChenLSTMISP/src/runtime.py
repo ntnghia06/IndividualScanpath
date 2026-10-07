@@ -1,0 +1,76 @@
+import hashlib
+import json
+import random
+from pathlib import Path
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+from dataset.dataset import PerGAZE, collate_func
+from dataset.schema import make_manifest, read_records
+from models.baseline_attention import baseline
+from models.sampling import sample_scanpaths
+from utils.evaluation import Metrics, summarize
+
+def write_json(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+
+def setup(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') if args.device == 'auto' else torch.device(args.device)
+    records = read_records(args.data_file)
+    manifest = make_manifest(records, args.seed, args.split_ratios)
+    manifest['data_sha256'] = hashlib.sha256(args.data_file.read_bytes()).hexdigest()
+    return (records, manifest, device)
+
+def dataset(args, records, manifest, split):
+    cls, extra = (PerGAZE, {})
+    return cls(records, manifest, args.img_dir, args.att_dir, split=split, max_length=args.max_length, blur_sigma=args.blur_sigma, **extra)
+
+def loader(args, data, shuffle=False):
+    if not len(data):
+        raise ValueError('The requested split is empty')
+    return DataLoader(data, batch_size=args.batch, shuffle=shuffle, num_workers=args.workers, collate_fn=collate_func, pin_memory=torch.cuda.is_available())
+
+def model(args, manifest, device, pretrained=None):
+    return baseline(convLSTM_length=args.max_length, min_length=args.min_length, subject_num=len(manifest['subjects']), embedding_dim=args.embedding_dim, action_map_num=args.action_map_num, dropout=args.dropout, pretrained=args.pretrained if pretrained is None else pretrained).to(device)
+
+def move(batch, device):
+    return {key: value.to(device, non_blocking=True) if torch.is_tensor(value) else value for key, value in batch.items()}
+
+def forward(model, batch):
+    return model(batch['images'], batch['subjects'], batch['attention_maps'])
+
+def evaluate(model, batches, args, device, limit=0):
+    model.eval()
+    metrics, rows = (Metrics(), [])
+    with torch.no_grad():
+        for i, batch in enumerate(batches):
+            if limit and i >= limit:
+                break
+            moved = move(batch, device)
+            prediction = forward(model, moved)
+            for repeat in range(args.eval_repeat_num):
+                paths, *_ = sample_scanpaths(prediction, args.min_length, greedy=args.greedy)
+                for info, target, path in zip(batch['metadata'], batch['fix_vectors'], paths):
+                    rows.append({**info, 'repeat': repeat, 'scanpath': path.tolist(), 'metrics': metrics.pair(target, path)})
+    return (summarize(rows), rows)
+
+def load_checkpoint(path, device):
+    return torch.load(path, map_location=device, weights_only=True)
+
+def restore_config(args, checkpoint, manifest):
+    saved_manifest = checkpoint['manifest']
+    if saved_manifest['data_sha256'] != manifest['data_sha256']:
+        raise ValueError('Checkpoint was trained with a different JSON file')
+    if checkpoint['config'].get('model', 'chenlstm') != args.model:
+        raise ValueError('Checkpoint architecture does not match --model')
+    for key in ('max_length', 'min_length', 'embedding_dim', 'action_map_num', 'dropout', 'blur_sigma'):
+        setattr(args, key, checkpoint['config'][key])
+    return saved_manifest

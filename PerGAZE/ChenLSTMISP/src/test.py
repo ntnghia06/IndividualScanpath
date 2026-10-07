@@ -1,0 +1,23 @@
+"""Evaluate the saved checkpoint with its original split and subject mapping."""
+from opts import parse_opt
+from runtime import (setup, dataset, loader, model, evaluate, write_json, load_checkpoint,
+                     restore_config)
+
+
+def main():
+    args = parse_opt("Evaluate PerGAZE")
+    records, manifest, device = setup(args)
+    path = args.checkpoint or args.log_root / "checkpoints/best.pth"
+    checkpoint = load_checkpoint(path, device)
+    manifest = restore_config(args, checkpoint, manifest)
+    network = model(args, manifest, device, pretrained=False)
+    network.load_state_dict(checkpoint["model"])
+    summary, rows = evaluate(network, loader(args, dataset(args, records, manifest, args.split)),
+                             args, device, args.max_batches)
+    write_json(args.log_root / f"evaluation_{args.split}.json", summary)
+    write_json(args.log_root / f"predictions_{args.split}.json", rows)
+    print(summary, flush=True)
+
+
+if __name__ == "__main__":
+    main()
