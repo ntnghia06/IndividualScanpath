@@ -15,6 +15,7 @@ from opts import parse_opt
 from runtime import (setup, dataset, loader, model, move, forward, evaluate, write_json,
                      load_checkpoint, restore_config)
 from utils.evaluation import Metrics
+from parallel import model_state_dict, load_model_state, restore_cuda_rng
 from schedule import learning_rate_factor
 from training_settings import restore_training_settings
 
@@ -47,7 +48,8 @@ def smoke_test(args, records, manifest, device):
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
     checks = []
     for index in indices:
-        batch = move(collate_func([data[index]]), device)
+        smoke_batch = max(args.batch, len(args.gpu_ids), 1)
+        batch = move(collate_func([data[index] for _ in range(smoke_batch)]), device)
         network.train()
         optimizer.zero_grad(set_to_none=True)
         prediction = forward(network, batch)
@@ -87,7 +89,7 @@ def main():
     args.log_root.mkdir(parents=True, exist_ok=True)
     if args.smoke_test:
         print({"records": len(records), "subjects": len(manifest["subjects"]), "splits": split_counts(records, manifest),
-               "device": str(device)}, flush=True)
+               "device": str(device), "gpu_ids": args.gpu_ids, "data_parallel": len(args.gpu_ids) > 1}, flush=True)
         smoke_test(args, records, manifest, device)
         return
     checkpoint_path = args.checkpoint or args.log_root / "checkpoints/checkpoint.pth"
@@ -100,19 +102,19 @@ def main():
     elif checkpoint_path.exists():
         raise FileExistsError(f"Existing checkpoint: use --resume or a new --log_root: {checkpoint_path}")
     print({"records": len(records), "subjects": len(manifest["subjects"]), "splits": split_counts(records, manifest),
-           "device": str(device)}, flush=True)
+           "device": str(device), "gpu_ids": args.gpu_ids, "data_parallel": len(args.gpu_ids) > 1}, flush=True)
     print({"max_length": args.max_length,
            "train_batch": args.batch, "validation_batch": args.test_batch}, flush=True)
     network = model(args, manifest, device, pretrained=False if checkpoint else None)
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     start, best = 0, -float("inf")
     if checkpoint:
-        network.load_state_dict(checkpoint["model"])
+        load_model_state(network, checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         start, best = checkpoint["epoch"] + 1, checkpoint["best_metric"]
         torch.set_rng_state(checkpoint["rng_cpu"].cpu())
         if device.type == "cuda" and checkpoint.get("rng_cuda"):
-            torch.cuda.set_rng_state_all([state.cpu() for state in checkpoint["rng_cuda"]])
+            restore_cuda_rng(checkpoint["rng_cuda"])
     write_json(args.log_root / "manifest.json", manifest)
     config = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
     write_json(args.log_root / "hparams.json", config)
@@ -168,7 +170,7 @@ def main():
             score = 2 * a * b / (a + b) if a + b else 0.
             improved = score > best
             best = max(best, score)
-        state = {"model": network.state_dict(), "optimizer": optimizer.state_dict(), "epoch": epoch,
+        state = {"model": model_state_dict(network), "optimizer": optimizer.state_dict(), "epoch": epoch,
                  "best_metric": best, "manifest": manifest, "config": config,
                  "scheduler": scheduler.state_dict(), "batches_per_epoch": steps,
                  "rng_cpu": torch.get_rng_state(),

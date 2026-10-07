@@ -145,3 +145,17 @@ Train now displays a tqdm batch progress bar with phase, epoch, mean loss,
 learning rate, elapsed time and ETA. Validation/evaluation have their own bars
 with batch counts and processed prediction counts. Bars respect batch limits
 and are emitted as text to stdout for Kaggle subprocess cells.
+
+## Ready-to-run Kaggle notebook
+
+Import `kaggle_gazeformer_2gpu.ipynb` into Kaggle, enable Internet, select GPU
+T4 x2 and attach the PerGAZE dataset. The notebook uses the public GitHub repo,
+validates data, runs a bounded smoke check, trains, evaluates and packages results.
+All AiR run defaults are retained except notebook global train batch 2 on two
+GPUs (one sample per GPU); a one-GPU session uses batch 1. `--gpu_ids 0 1` enables
+DataParallel; omitting the IDs uses all visible GPUs automatically. Validation
+batch 1 uses one GPU per batch; `--test_batch 2` is an optional override.
+Portable checkpoints can be loaded on one or two GPUs. Resume keeps the saved
+batch size and training settings. Optional semantic text embeddings are written
+to `/kaggle/working/gazeformer_task_embeddings.npz` and must be retained when used.
+The default remains learned word embeddings and requires no extra text model.
