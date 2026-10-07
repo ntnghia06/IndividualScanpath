@@ -1,3 +1,6 @@
+import sys
+from itertools import islice
+from tqdm import tqdm
 import hashlib
 import json
 import random
@@ -63,19 +66,21 @@ def move(batch, device):
 def forward(model, batch):
     return model(batch['images'], batch['subjects'], batch['attention_maps'], batch['task_tokens'], batch['task_mask'], batch.get('task_embeddings'))
 
-def evaluate(model, batches, args, device, limit=0):
+def evaluate(model, batches, args, device, limit=0, description="Evaluation"):
     model.eval()
     metrics, rows = (Metrics(), [])
-    with torch.no_grad():
-        for i, batch in enumerate(batches):
-            if limit and i >= limit:
-                break
+    total = min(len(batches), limit) if limit else len(batches)
+    with torch.no_grad(), tqdm(total=total, desc=description, unit="batch",
+                               dynamic_ncols=True, mininterval=1, file=sys.stdout) as progress:
+        for batch in islice(batches, total):
             moved = move(batch, device)
             prediction = forward(model, moved)
             for repeat in range(args.eval_repeat_num):
                 paths, *_ = sample_scanpaths(prediction, args.min_length, greedy=args.greedy)
                 for info, target, path in zip(batch['metadata'], batch['fix_vectors'], paths):
                     rows.append({**info, 'repeat': repeat, 'scanpath': path.tolist(), 'metrics': metrics.pair(target, path)})
+            progress.set_postfix(samples=len(rows), refresh=False)
+            progress.update(1)
     return (summarize(rows), rows)
 
 def load_checkpoint(path, device):

@@ -140,3 +140,8 @@ Resume restores saved training settings and scheduler state; explicit
 conflicting hyperparameters or a changed batch limit are rejected. `--epoch`
 can extend the target duration. Older fixed-LR checkpoints need a new run.
 The selected PerGAZE dataset files and image/scanpath geometry are unchanged.
+
+Train now displays a tqdm batch progress bar with phase, epoch, mean loss,
+learning rate, elapsed time and ETA. Validation/evaluation have their own bars
+with batch counts and processed prediction counts. Bars respect batch limits
+and are emitted as text to stdout for Kaggle subprocess cells.

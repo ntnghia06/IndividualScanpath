@@ -2,6 +2,7 @@ torch>=2.2
 numpy>=1.24
 Pillow>=9.1
 scipy>=1.10
+tqdm>=4.65
 torchvision>=0.17
 # Optional semantic text embeddings: sentence-transformers>=2.2
 # Optional evaluation: multimatch-gaze

@@ -1,5 +1,8 @@
 """Supervised and ScanMatch policy-gradient training across all conditions."""
 import time
+import sys
+from itertools import islice
+from tqdm import tqdm
 from pathlib import Path
 
 import torch
@@ -129,34 +132,37 @@ def main():
         started, total, seen = time.monotonic(), 0., 0
         reinforcement = epoch >= args.start_rl_epoch
         conditions = {"present": 0, "absent": 0, "vqa": 0}
-        for i, raw_batch in enumerate(train):
-            if args.max_batches and i >= args.max_batches:
-                break
-            batch = move(raw_batch, device)
-            optimizer.zero_grad(set_to_none=True)
-            if reinforcement:
-                loss, _ = rl_loss(network, batch, args, metrics)
-            else:
-                network.train()
-                loss, _, _ = supervised_loss(forward(network, batch), batch, args.lambda_1)
-            if not torch.isfinite(loss):
-                raise ValueError(f"Nonfinite loss at epoch {epoch}, batch {i}")
-            loss.backward()
-            if args.clip > 0:
-                torch.nn.utils.clip_grad_norm_(network.parameters(), args.clip, error_if_nonfinite=True)
-            elif any(p.grad is not None and not torch.isfinite(p.grad).all() for p in network.parameters()):
-                raise ValueError("Nonfinite gradient")
-            optimizer.step()
-            scheduler.step()
-            total += float(loss.detach()) * len(raw_batch["metadata"])
-            seen += len(raw_batch["metadata"])
-            for info in raw_batch["metadata"]:
-                conditions[info["condition"]] += 1
-            if (i + 1) % 50 == 0:
-                print(f"epoch {epoch + 1}, batch {i + 1}/{len(train)}, loss {total / seen:.4f}", flush=True)
+        phase = "RL" if reinforcement else "Supervised"
+        with tqdm(total=steps, desc=f"Epoch {epoch + 1}/{args.epoch} | {phase}",
+                  unit="batch", dynamic_ncols=True, mininterval=1, file=sys.stdout) as progress:
+            for raw_batch in islice(train, steps):
+                batch = move(raw_batch, device)
+                optimizer.zero_grad(set_to_none=True)
+                if reinforcement:
+                    loss, _ = rl_loss(network, batch, args, metrics)
+                else:
+                    network.train()
+                    loss, _, _ = supervised_loss(forward(network, batch), batch, args.lambda_1)
+                if not torch.isfinite(loss):
+                    raise ValueError(f"Nonfinite loss at epoch {epoch}, batch {i}")
+                loss.backward()
+                if args.clip > 0:
+                    torch.nn.utils.clip_grad_norm_(network.parameters(), args.clip, error_if_nonfinite=True)
+                elif any(p.grad is not None and not torch.isfinite(p.grad).all() for p in network.parameters()):
+                    raise ValueError("Nonfinite gradient")
+                optimizer.step()
+                scheduler.step()
+                total += float(loss.detach()) * len(raw_batch["metadata"])
+                seen += len(raw_batch["metadata"])
+                for info in raw_batch["metadata"]:
+                    conditions[info["condition"]] += 1
+                progress.set_postfix(loss=f"{total / seen:.4f}",
+                                     lr=f"{optimizer.param_groups[0]['lr']:.2e}", refresh=False)
+                progress.update(1)
         summary, score, improved = None, None, False
         if epoch > args.no_eval_epoch:
-            summary, _ = evaluate(network, validation, args, device, args.eval_max_batches)
+            summary, _ = evaluate(network, validation, args, device, args.eval_max_batches,
+                                  description=f"Epoch {epoch + 1}/{args.epoch} | Validation")
             values = summary["overall"]["metrics"]
             a, b = (values[key]["mean"] for key in ("ScanMatch_without_duration", "ScanMatch_with_duration"))
             score = 2 * a * b / (a + b) if a + b else 0.

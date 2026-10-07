@@ -125,3 +125,8 @@ The Kaggle notebook uses default global train batch 2 on two GPUs (one sample
 per GPU); no configuration-selection argument is passed. Validation batch 1
 uses one GPU per batch, matching the AiR run defaults. To increase the global
 train batch, pass `--batch 4` explicitly.
+
+Train now displays a tqdm batch progress bar with phase, epoch, mean loss,
+learning rate, elapsed time and ETA. Validation/evaluation have their own bars
+with batch counts and processed prediction counts. Bars respect batch limits
+and are emitted as text to stdout for Kaggle subprocess cells.
