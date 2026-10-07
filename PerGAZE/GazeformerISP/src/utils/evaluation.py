@@ -3,11 +3,12 @@ import numpy as np
 
 from utils.evaltools.scanmatch import ScanMatch
 from utils.evaltools.visual_attention_metrics import string_edit_distance, scaled_time_delay_embedding_similarity
+from geometry import SCANPATH_SIZE
 
 
 class Metrics:
     def __init__(self):
-        self.scanmatches = [ScanMatch(Xres=320, Yres=240, Xbin=16, Ybin=12, Offset=(0, 0),
+        self.scanmatches = [ScanMatch(Xres=SCANPATH_SIZE[1], Yres=SCANPATH_SIZE[0], Xbin=16, Ybin=11, Offset=(0, 0),
                                      Threshold=3.5, TempBin=bin_ms) for bin_ms in (0, 50)]
 
     def scanmatch(self, target, prediction):
@@ -37,7 +38,7 @@ class Metrics:
 
     def pair(self, target, prediction):
         a, b = self.scanmatch(target, prediction)
-        stimulus = np.zeros((240, 320), dtype=np.uint8)
+        stimulus = np.zeros(SCANPATH_SIZE, dtype=np.uint8)
         metrics = {"ScanMatch_without_duration": a, "ScanMatch_with_duration": b,
                    "duration_outlier": float(bool(len(prediction)) and (
                        (prediction[:, 2] > 10).any() or np.rint(prediction[:, 2] * 20).sum() > 8192)),
@@ -53,7 +54,7 @@ class Metrics:
             dtype = [("start_x", "f8"), ("start_y", "f8"), ("duration", "f8")]
             scores = multimatch_gaze.docomparison(
                 np.array([tuple(row) for row in target], dtype=dtype),
-                np.array([tuple(row) for row in prediction], dtype=dtype), screensize=[320, 240])
+                np.array([tuple(row) for row in prediction], dtype=dtype), screensize=[SCANPATH_SIZE[1], SCANPATH_SIZE[0]])
             metrics.update({"MultiMatch_" + name: float(value) for name, value in
                             zip(("vector", "direction", "length", "position", "duration"), scores)})
         return metrics

@@ -7,7 +7,7 @@ COCO_Search18 branches. Run commands from `D:\PerScan`.
 GazeformerISP/
   bash/               train.sh, test.sh
   src/
-    dataset/          JSON loader, subject mapping and image-disjoint splits
+    dataset/          JSON loader, subject mapping and explicit file membership
     models/           network, losses and scanpath sampling
     preprocess/       full dataset validation and optional text embedding extraction
     utils/            evaluation and original metric implementations
@@ -21,23 +21,29 @@ GazeformerISP/
   test.ps1
 ```
 
-Reads `dataset/PerGAZED/dataset/PerGAZE.json` directly. `present` uses
-`images/TP/task/name` and JSON bbox `[x,y,width,height]`; `vqa` uses
-`images/VQA/name` and `attention_reasoning/qid.npy`; `absent` uses
+Training reads all records in `dataset/PerGAZED/dataset/train.json` (24,194
+samples); validation reads all records in `test_seen.json` (2,659 samples).
+Override with `--train_file` and `--val_file`; `--data_file` is an alias for
+`--train_file`. There is no random split. File membership determines the split
+for each record even when images or the original JSON split fields overlap.
+
+`present` uses `images/TP/task/name` and JSON bbox `[x,y,width,height]`; `vqa`
+uses `images/VQA/name` and `attention_reasoning/qid.npy`; `absent` uses
 `images/TA/task/name` with zero auxiliary guidance. Flat TP/TA image directories
-are also supported. Fixation coordinates use actual image dimensions, are
-clipped at boundaries and scaled to 320x240; `T` is milliseconds.
+are also supported. Fixations use actual image dimensions and are clipped at
+boundaries; `T` is milliseconds.
 The explanation field `prediction` is not a training target.
 
 COCO TP/TA share observer IDs, and AiR observers use a separate namespace.
-Splits are deterministic 80/10/10 by image, stratified by condition membership.
-All questions/tasks/observers on one image stay in the same split. This is a
-new PerGAZE split rather than the original dataset benchmark split.
+All observer embeddings are defined from training subjects; validation rejects
+observers absent from training. The manifest stores per-record file membership
+and SHA-256 hashes of both input files. The full dataset currently has 23
+training observers and the same 23 validation observers.
 
 The network adapts the original GazeformerISP Transformer, observer-centric
-integration and adaptive fixation heads. Images are resized to 480x640; online
-ResNet50 features form a 15x20 token grid. Fixation logits are interpolated to
-30x40 plus the stop action. Nonzero bbox/attention guidance is normalized and
+integration and adaptive fixation heads. Images are resized to 1024x768 (width x height); online
+ResNet50 features form a 32x24 token grid. Fixation logits are interpolated to
+32x22 plus the stop action (705 actions in total). Nonzero bbox/attention guidance is normalized and
 averaged with learned task attention. TA text is masked. Default text encoding
 is learned mean word embeddings with a training-only vocabulary; pretrained
 SentenceTransformer vectors are optional. This is an adaptation of the original
@@ -60,7 +66,7 @@ python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --smoke_test --
 
 # Resume the default run or evaluate all records
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --resume --epoch 30
-python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py --split all
+python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py --split validation
 
 python -m unittest discover -s src/IndividualScanpath/PerGAZE/GazeformerISP/tests
 ```
@@ -74,8 +80,8 @@ and `--eval_max_batches N` bound functional runs; zero processes the full split.
 Default output is this model's own `runs/` directory. It contains manifests,
 hyperparameters, validation/epoch reports, `checkpoints/checkpoint.pth`,
 `checkpoints/best.pth`, evaluation metrics and predicted scanpaths. Test/resume
-reuse checkpoint architecture, observer mapping and splits and verify input
-JSON SHA-256. Checkpoints from the other architecture are rejected.
+reuse checkpoint architecture, observer mapping and file membership and verify
+both input JSON SHA-256 hashes. Checkpoints from the other architecture are rejected.
 
 ScanMatch, SED and STDE are included; install `multimatch-gaze` for MultiMatch.
 Paths shorter than three fixations are excluded from MultiMatch only. Predicted
@@ -100,3 +106,16 @@ its SHA-256. Provide the same contents with `--text_embeddings` if relocating it
 The original metric copyright/GPL notices and architecture attribution are
 retained in source. Cite IndividualScanpath and the corresponding source
 models/datasets. Functional tests do not constitute full model training.
+
+Image geometry is centralized in `src/geometry.py`: image 1024x768, scanpath
+512x352, feature grid 32x24 and action grid 32x22. Action cells cover 16x16
+scanpath pixels. ScanMatch uses 16x11 bins; SED, STDE and MultiMatch use the
+512x352 frame. All bbox/map guidance is resized to the action grid before
+integration. Checkpoints from the older 640x480 / 320x240 configuration are
+rejected and require retraining because the feature/action grids have changed.
+
+`test.py` now evaluates the validation file (`test_seen.json`) by default and
+writes `evaluation_validation.json` and `predictions_validation.json`. This file
+is also used to select the best checkpoint during training. Use `--split train`
+or `--split all` only for diagnostic evaluation. No third held-out test set is
+created. Checkpoints from the former 80/10/10 split require a new training run.

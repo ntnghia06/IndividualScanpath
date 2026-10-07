@@ -11,9 +11,10 @@ import torch
 from PIL import Image
 
 from dataset.dataset import PerGAZE, load_guidance
-from dataset.schema import make_manifest, image_key, subject_key
+from dataset.schema import make_manifest, make_file_manifest, image_key, subject_key, split_counts
 from models.sampling import sample_scanpaths
 from utils.evaluation import Metrics
+from utils.evaltools.visual_attention_metrics import _scanpath_to_string
 
 
 class PerGAZETest(unittest.TestCase):
@@ -36,8 +37,8 @@ class PerGAZETest(unittest.TestCase):
 
     def test_guidance_routing_and_bbox_xywh(self):
         present, absent, vqa = [load_guidance(r, self.root / "attention", (200, 100)) for r in self.records]
-        self.assertEqual(present.shape, (1, 30, 40))
-        self.assertEqual(float(present[0, 10, 12]), 1.)
+        self.assertEqual(present.shape, (1, 22, 32))
+        self.assertEqual(float(present[0, 8, 12]), 1.)
         self.assertEqual(float(present[0, 20, 25]), 0.)
         self.assertEqual(float(absent.max()), 0.)
         self.assertEqual(float(vqa.min()), 1.)
@@ -53,16 +54,34 @@ class PerGAZETest(unittest.TestCase):
         manifest = make_manifest(self.records)
         data = PerGAZE(self.records, manifest, self.root, self.root / "attention", split="all", max_length=4, blur_sigma=0)
         row = data[0]
-        np.testing.assert_allclose(row["fix_vectors"][0], [160, 120, .2])
-        self.assertLess(row["fix_vectors"][1, 0], 320)
+        self.assertEqual(tuple(row["images"].shape), (3, 768, 1024))
+        self.assertEqual(tuple(row["target_scanpaths"].shape), (4, 705))
+        np.testing.assert_allclose(row["fix_vectors"][0], [256, 176, .2])
+        self.assertLess(row["fix_vectors"][1, 0], 512)
         self.assertEqual(row["fix_vectors"][1, 1], 0)
-        self.assertEqual(row["target_scanpaths"][0].argmax(), 1 + 15 * 40 + 20)
+        self.assertEqual(row["target_scanpaths"][0].argmax(), 1 + 11 * 32 + 16)
         self.assertEqual(row["target_scanpaths"][2, 0], 1)
         self.assertEqual(row["action_masks"].tolist(), [1, 1, 1, 0])
         self.assertEqual(row["duration_masks"].tolist(), [1, 1, 0, 0])
 
+    def test_explicit_files_keep_same_image_in_requested_splits(self):
+        train_rows = [self.records[0], self.records[2]]
+        val_rows = [self.records[1]]
+        manifest = make_file_manifest(train_rows, val_rows)
+        rows = train_rows + val_rows
+        train = PerGAZE(rows, manifest, self.root, self.root / "attention", split="train")
+        val = PerGAZE(rows, manifest, self.root, self.root / "attention", split="validation")
+        self.assertEqual([r for _, r in train.records], train_rows)
+        self.assertEqual([r for _, r in val.records], val_rows)
+        self.assertEqual(split_counts(rows, manifest)["validation"], {"absent": 1})
+        self.assertEqual(manifest["record_splits"], ["train", "train", "validation"])
+
+    def test_validation_observers_must_be_seen_in_train(self):
+        with self.assertRaisesRegex(ValueError, "observers"):
+            make_file_manifest([self.records[0]], [self.records[2]])
+
     def test_termination_masks(self):
-        probability = torch.zeros(2, 3, 1201)
+        probability = torch.zeros(2, 3, 705)
         probability[0, :, 0] = 1  # immediate stop
         probability[1, 0, 1] = 1
         probability[1, 1:, 0] = 1
@@ -74,13 +93,26 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual(duration.tolist(), [[False, False, False], [True, False, False]])
 
     def test_duration_sampling_uses_standard_deviation(self):
-        probability = torch.zeros(1, 1, 1201)
+        probability = torch.zeros(1, 1, 705)
         probability[:, :, 1] = 1
         prediction = {"all_actions_prob": probability, "log_normal_mu": torch.zeros(1, 1),
                       "log_normal_sigma2": torch.full((1, 1), 4.)}
         with patch("torch.randn_like", side_effect=torch.ones_like):
             _, _, times, _, _ = sample_scanpaths(prediction)
         self.assertAlmostEqual(float(times[0, 0]), float(np.exp(2)), places=5)
+
+    def test_sampling_frame_corners(self):
+        probability = torch.zeros(1, 2, 705)
+        probability[0, 0, 1] = 1
+        probability[0, 1, 704] = 1
+        prediction = {"all_actions_prob": probability, "log_normal_mu": torch.zeros(1, 2),
+                      "log_normal_sigma2": torch.ones(1, 2)}
+        paths, *_ = sample_scanpaths(prediction, greedy=True)
+        np.testing.assert_allclose(paths[0][:, :2], [[8, 8], [504, 344]])
+
+    def test_sed_frame_edges_stay_in_last_region(self):
+        path = np.array([[504., 344.], [511.99, 351.99]])
+        self.assertEqual(_scanpath_to_string(path, 352, 512, 5), "yy")
 
     def test_evaluation_identity_and_empty_prediction(self):
         target = np.array([[10., 20., .2], [40., 60., .3], [100., 120., .4]])

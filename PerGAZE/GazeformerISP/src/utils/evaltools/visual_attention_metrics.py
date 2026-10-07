@@ -286,13 +286,15 @@ def _Levenshtein(string_1, string_2, substitution_cost=1):
 
 
 def _scanpath_to_string(scanpath, height, width, n):
-    height_step, width_step = height // n, width // n
-
     string = ''
 
     for i in range(np.shape(scanpath)[0]):
-        fixation = scanpath[i].astype(np.int32)
-        correspondent_square = (fixation[0] // width_step) + (fixation[1] // height_step) * n
+        # Fractional grid steps keep edge pixels inside the nxn grid even
+        # when width/height (512x352) are not divisible by n.
+        fixation = scanpath[i]
+        column = int(np.clip(np.floor(fixation[0] * n / width), 0, n - 1))
+        row = int(np.clip(np.floor(fixation[1] * n / height), 0, n - 1))
+        correspondent_square = column + row * n
         string += chr(97 + correspondent_square)
 
     return string

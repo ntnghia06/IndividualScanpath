@@ -10,8 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import torch
 import numpy as np
 from dataset.text import add_text_manifest, GazeformerPerGAZE
-from dataset.schema import make_manifest
+from dataset.schema import make_manifest, make_file_manifest
 from models.gazeformer.model import GazeformerISP
+from runtime import restore_config
 
 
 class GazeformerTest(unittest.TestCase):
@@ -24,16 +25,16 @@ class GazeformerTest(unittest.TestCase):
             action_map_num=2, max_length=1, dropout=0., train_backbone=False, backbone_weights="coco")
         cls.manifest = {"subjects": {"coco:1": 0}, "text_vocabulary": {"<pad>": 0, "<unk>": 1, "car": 2, "chair": 3}}
         cls.model = GazeformerISP(cls.args, cls.manifest, pretrained=False).eval()
-        cls.features = torch.randn(1, 300, 2048)
+        cls.features = torch.randn(1, 768, 2048)
 
     def predict(self, mask, tokens, guidance=None):
         return self.model.forward_features(self.features, torch.tensor([0]),
-            torch.zeros(1, 1, 30, 40) if guidance is None else guidance,
+            torch.zeros(1, 1, 22, 32) if guidance is None else guidance,
             torch.tensor([tokens]), torch.tensor([mask]))
 
     def test_batch_one_length_one_output(self):
         prediction = self.predict(1., [2, 0])
-        self.assertEqual(prediction["all_actions_prob"].shape, (1, 1, 1201))
+        self.assertEqual(prediction["all_actions_prob"].shape, (1, 1, 705))
         self.assertEqual(prediction["log_normal_mu"].shape, (1, 1))
         torch.testing.assert_close(prediction["all_actions_prob"].sum(-1), torch.ones(1, 1))
 
@@ -42,10 +43,10 @@ class GazeformerTest(unittest.TestCase):
         torch.testing.assert_close(a["all_actions_prob"], b["all_actions_prob"])
 
     def test_guidance_changes_prediction(self):
-        a = torch.zeros(1, 1, 30, 40)
+        a = torch.zeros(1, 1, 22, 32)
         b = a.clone()
-        a[:, :, :15, :20] = 1
-        b[:, :, 15:, 20:] = 1
+        a[:, :, :11, :16] = 1
+        b[:, :, 11:, 16:] = 1
         first = self.predict(1., [2, 0], a)["all_actions_prob"]
         second = self.predict(1., [2, 0], b)["all_actions_prob"]
         self.assertGreater(float((first - second).abs().max()), 1e-8)
@@ -79,6 +80,18 @@ class GazeformerTest(unittest.TestCase):
         torch.testing.assert_close(present["task_embeddings"], torch.ones(16))
         torch.testing.assert_close(absent["task_embeddings"], torch.zeros(16))
         self.assertEqual(float(absent["task_mask"]), 0.)
+
+    def test_old_checkpoint_geometry_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "geometry"):
+            restore_config(SimpleNamespace(), {"manifest": {}}, {})
+
+    def test_file_based_vocabulary_uses_train_rows_only(self):
+        train_row = {"name": "same.jpg", "condition": "present", "subject": 1, "task": "trainword"}
+        val_row = {**train_row, "task": "valword"}
+        manifest = make_file_manifest([train_row], [val_row])
+        add_text_manifest([train_row, val_row], manifest)
+        self.assertIn("trainword", manifest["text_vocabulary"])
+        self.assertNotIn("valword", manifest["text_vocabulary"])
 
 
 if __name__ == "__main__":

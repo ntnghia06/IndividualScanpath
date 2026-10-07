@@ -1,9 +1,12 @@
 import numpy as np
 import torch
+from geometry import SCANPATH_SIZE, ACTION_GRID, ACTION_COUNT
 
 
-def sample_scanpaths(prediction, min_length=1, width=320, height=240, greedy=False):
+def sample_scanpaths(prediction, min_length=1, width=SCANPATH_SIZE[1], height=SCANPATH_SIZE[0], greedy=False):
     probabilities = prediction["all_actions_prob"].clone()
+    if probabilities.shape[-1] != ACTION_COUNT:
+        raise ValueError(f"Expected {ACTION_COUNT} actions for the PerGAZE Gazeformer grid")
     probabilities[:, :min_length, 0] = 0
     probabilities = probabilities / probabilities.sum(-1, keepdim=True).clamp_min(1e-8)
     distribution = torch.distributions.Categorical(probs=probabilities)
@@ -22,6 +25,7 @@ def sample_scanpaths(prediction, min_length=1, width=320, height=240, greedy=Fal
             if action == 0:
                 break
             cell = int(action) - 1
-            path.append(((cell % 40 + .5) * width / 40, (cell // 40 + .5) * height / 30, float(duration)))
+            path.append(((cell % ACTION_GRID[1] + .5) * width / ACTION_GRID[1],
+                         (cell // ACTION_GRID[1] + .5) * height / ACTION_GRID[0], float(duration)))
         paths.append(np.asarray(path, dtype=np.float64).reshape(-1, 3))
     return paths, distribution.log_prob(actions), times, active, duration_mask

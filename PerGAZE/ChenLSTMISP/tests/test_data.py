@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 
 from dataset.dataset import PerGAZE, load_guidance
-from dataset.schema import make_manifest, image_key, subject_key
+from dataset.schema import make_manifest, make_file_manifest, image_key, subject_key, split_counts
 from models.sampling import sample_scanpaths
 from utils.evaluation import Metrics
 
@@ -60,6 +60,22 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual(row["target_scanpaths"][2, 0], 1)
         self.assertEqual(row["action_masks"].tolist(), [1, 1, 1, 0])
         self.assertEqual(row["duration_masks"].tolist(), [1, 1, 0, 0])
+
+    def test_explicit_files_keep_same_image_in_requested_splits(self):
+        train_rows = [self.records[0], self.records[2]]
+        val_rows = [self.records[1]]
+        manifest = make_file_manifest(train_rows, val_rows)
+        rows = train_rows + val_rows
+        train = PerGAZE(rows, manifest, self.root, self.root / "attention", split="train")
+        val = PerGAZE(rows, manifest, self.root, self.root / "attention", split="validation")
+        self.assertEqual([r for _, r in train.records], train_rows)
+        self.assertEqual([r for _, r in val.records], val_rows)
+        self.assertEqual(split_counts(rows, manifest)["validation"], {"absent": 1})
+        self.assertEqual(manifest["record_splits"], ["train", "train", "validation"])
+
+    def test_validation_observers_must_be_seen_in_train(self):
+        with self.assertRaisesRegex(ValueError, "observers"):
+            make_file_manifest([self.records[0]], [self.records[2]])
 
     def test_termination_masks(self):
         probability = torch.zeros(2, 3, 1201)

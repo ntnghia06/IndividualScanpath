@@ -8,7 +8,7 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter
 from torch.utils.data import Dataset
 
-from dataset.schema import image_key, image_path, subject_key
+from dataset.schema import record_split, image_path, subject_key
 
 
 def load_guidance(row, attention_dir, image_size, map_size=(30, 40)):
@@ -47,7 +47,7 @@ class PerGAZE(Dataset):
                  resize=(240, 320), max_length=16, blur_sigma=1.0, image_resize=None):
         self.manifest = manifest
         self.records = [(i, r) for i, r in enumerate(records)
-                        if split == "all" or manifest["splits"][image_key(r)] == split]
+                        if split == "all" or record_split(manifest, i, r) == split]
         self.image_dir, self.attention_dir = image_dir, attention_dir
         self.resize, self.max_length, self.blur_sigma = resize, max_length, blur_sigma
         self.image_resize = image_resize or resize

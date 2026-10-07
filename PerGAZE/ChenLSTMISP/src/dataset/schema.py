@@ -1,4 +1,4 @@
-"""PerGAZE metadata, subject identities and image-disjoint splits."""
+"""PerGAZE metadata, subject identities and explicit file membership."""
 import hashlib
 import json
 from collections import Counter
@@ -69,7 +69,23 @@ def image_path(root, row):
     raise FileNotFoundError(f"Image not found: {candidates}")
 
 
+def make_file_manifest(train_records, validation_records):
+    subjects = {key: i for i, key in enumerate(sorted({subject_key(row) for row in train_records}))}
+    unseen = {subject_key(row) for row in validation_records} - subjects.keys()
+    if unseen:
+        raise ValueError(f"Validation contains observers missing from training: {sorted(unseen)}")
+    return {"version": 2, "split_mode": "explicit_files", "subjects": subjects,
+            "record_splits": ["train"] * len(train_records) + ["validation"] * len(validation_records)}
+
+
+def record_split(manifest, index, row):
+    if manifest.get("split_mode") == "explicit_files":
+        return manifest["record_splits"][index]
+    return manifest["splits"][image_key(row)]
+
+
 def split_counts(records, manifest):
-    return {split: dict(Counter(r["condition"] for r in records
-                               if manifest["splits"][image_key(r)] == split))
-            for split in ("train", "validation", "test")}
+    splits = ("train", "validation") if manifest.get("split_mode") == "explicit_files" else ("train", "validation", "test")
+    return {split: dict(Counter(r["condition"] for index, r in enumerate(records)
+                               if record_split(manifest, index, r) == split))
+            for split in splits}

@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from dataset.dataset import PerGAZE
-from dataset.schema import image_key
+from dataset.schema import record_split
 
 
 def tokenize(text):
@@ -12,8 +12,8 @@ def tokenize(text):
 
 def add_text_manifest(records, manifest):
     words = set()
-    for row in records:
-        if row["condition"] != "absent" and manifest["splits"][image_key(row)] == "train":
+    for index, row in enumerate(records):
+        if row["condition"] != "absent" and record_split(manifest, index, row) == "train":
             words.update(tokenize(row["task"]))
     manifest["text_vocabulary"] = {"<pad>": 0, "<unk>": 1,
                                    **{word: i + 2 for i, word in enumerate(sorted(words))}}
@@ -21,7 +21,7 @@ def add_text_manifest(records, manifest):
 
 class GazeformerPerGAZE(PerGAZE):
     def __init__(self, *args, text_embeddings=None, max_text_length=64, **kwargs):
-        super().__init__(*args, image_resize=(480, 640), **kwargs)
+        super().__init__(*args, **kwargs)
         self.max_text_length = max_text_length
         self.embeddings = None
         if text_embeddings:

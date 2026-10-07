@@ -6,9 +6,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from dataset.dataset import PerGAZE, collate_func
-from dataset.schema import make_manifest, read_records
+from dataset.schema import make_file_manifest, read_records
 from models.sampling import sample_scanpaths
 from utils.evaluation import Metrics, summarize
+from geometry import GEOMETRY
 
 def write_json(path, value):
     path = Path(path)
@@ -23,9 +24,15 @@ def setup(args):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') if args.device == 'auto' else torch.device(args.device)
-    records = read_records(args.data_file)
-    manifest = make_manifest(records, args.seed, args.split_ratios)
-    manifest['data_sha256'] = hashlib.sha256(args.data_file.read_bytes()).hexdigest()
+    train_records = read_records(args.train_file)
+    validation_records = read_records(args.val_file)
+    records = train_records + validation_records
+    manifest = make_file_manifest(train_records, validation_records)
+    manifest['sources'] = {
+        'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
+        'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
+    }
+    manifest['geometry'] = GEOMETRY.copy()
     from dataset.text import add_text_manifest
     add_text_manifest(records, manifest)
     if args.text_embeddings:
@@ -76,8 +83,13 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
-    if saved_manifest['data_sha256'] != manifest['data_sha256']:
-        raise ValueError('Checkpoint was trained with a different JSON file')
+    if saved_manifest.get('geometry') != GEOMETRY:
+        raise ValueError('Checkpoint uses a different image/scanpath geometry; retrain with the 1024x768 image and 512x352 scanpath configuration')
+    if saved_manifest.get('split_mode') != 'explicit_files':
+        raise ValueError('Checkpoint uses the previous automatic split; start a new run for train.json/test_seen.json')
+    for split in ('train', 'validation'):
+        if saved_manifest['sources'][split]['sha256'] != manifest['sources'][split]['sha256']:
+            raise ValueError(f'Checkpoint {split} JSON differs from the supplied file')
     if checkpoint['config'].get('model', 'chenlstm') != args.model:
         raise ValueError('Checkpoint architecture does not match --model')
     for key in ('max_length', 'min_length', 'embedding_dim', 'action_map_num', 'dropout', 'blur_sigma'):

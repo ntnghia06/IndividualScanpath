@@ -33,7 +33,7 @@ def rl_loss(network, batch, args, metrics):
 
 def smoke_test(args, records, manifest, device):
     args.pretrained = False  # Smoke execution never needs a weight download.
-    data = dataset(args, records, manifest, "all")
+    data = dataset(args, records, manifest, "train")
     indices = [next(i for i, (_, row) in enumerate(data.records) if row["condition"] == c)
                for c in ("present", "absent", "vqa")]
     network = model(args, manifest, device)

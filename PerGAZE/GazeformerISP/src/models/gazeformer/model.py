@@ -7,13 +7,14 @@ from models.resnet import resnet50
 from models.gazeformer.transformer import Transformer
 from models.gazeformer.heads import CrossAttentionPredictor, attention_module
 from models.gazeformer.positional_encodings import PositionEmbeddingSine2d
+from geometry import FEATURE_GRID, ACTION_GRID, ACTION_COUNT
 
 
 class GazeformerISP(nn.Module):
     def __init__(self, args, manifest, pretrained=True):
         super().__init__()
         self.args = args
-        self.grid = (15, 20)
+        self.grid = FEATURE_GRID
         if args.backbone_weights == "coco":
             if pretrained:
                 from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
@@ -86,9 +87,9 @@ class GazeformerISP(nn.Module):
         tokens = self.stop(output).permute(1, 0, 2)
         logits = torch.cat([tokens.unsqueeze(-1), maps], -1)
         logits = (logits * weights.unsqueeze(-1)).sum(2)
-        # Keep the shared 30x40 target/action grid although image tokens are 15x20.
-        spatial = F.interpolate(logits[:, :, 1:].reshape(-1, 1, *self.grid), size=(30, 40),
-                                mode="bilinear", align_corners=False).reshape(features.shape[0], self.args.max_length, 1200)
+        # Image tokens use 24x32; fixation cells use 22x32 on a 352x512 frame.
+        spatial = F.interpolate(logits[:, :, 1:].reshape(-1, 1, *self.grid), size=ACTION_GRID,
+                                mode="bilinear", align_corners=False).reshape(features.shape[0], self.args.max_length, ACTION_COUNT - 1)
         logits = torch.cat([logits[:, :, :1], spatial], -1)
         return {"actions" if self.training else "all_actions_prob": logits if self.training else logits.softmax(-1),
                 "log_normal_mu": self.duration_mu(output).permute(1, 0, 2).squeeze(-1),

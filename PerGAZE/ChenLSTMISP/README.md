@@ -7,7 +7,7 @@ COCO_Search18 branches. Run commands from `D:\PerScan`.
 ChenLSTMISP/
   bash/               train.sh, test.sh
   src/
-    dataset/          JSON loader, subject mapping and image-disjoint splits
+    dataset/          JSON loader, subject mapping and explicit file membership
     models/           network, losses and scanpath sampling
     preprocess/       full dataset validation
     utils/            evaluation and original metric implementations
@@ -21,18 +21,24 @@ ChenLSTMISP/
   test.ps1
 ```
 
-Reads `dataset/PerGAZED/dataset/PerGAZE.json` directly. `present` uses
-`images/TP/task/name` and JSON bbox `[x,y,width,height]`; `vqa` uses
-`images/VQA/name` and `attention_reasoning/qid.npy`; `absent` uses
+Training reads all records in `dataset/PerGAZED/dataset/train.json` (24,194
+samples); validation reads all records in `test_seen.json` (2,659 samples).
+Override with `--train_file` and `--val_file`; `--data_file` is an alias for
+`--train_file`. There is no random split. File membership determines the split
+for each record even when images or the original JSON split fields overlap.
+
+`present` uses `images/TP/task/name` and JSON bbox `[x,y,width,height]`; `vqa`
+uses `images/VQA/name` and `attention_reasoning/qid.npy`; `absent` uses
 `images/TA/task/name` with zero auxiliary guidance. Flat TP/TA image directories
-are also supported. Fixation coordinates use actual image dimensions, are
-clipped at boundaries and scaled to 320x240; `T` is milliseconds.
+are also supported. Fixations use actual image dimensions and are clipped at
+boundaries; `T` is milliseconds.
 The explanation field `prediction` is not a training target.
 
 COCO TP/TA share observer IDs, and AiR observers use a separate namespace.
-Splits are deterministic 80/10/10 by image, stratified by condition membership.
-All questions/tasks/observers on one image stay in the same split. This is a
-new PerGAZE split rather than the original dataset benchmark split.
+All observer embeddings are defined from training subjects; validation rejects
+observers absent from training. The manifest stores per-record file membership
+and SHA-256 hashes of both input files. The full dataset currently has 23
+training observers and the same 23 validation observers.
 
 The ChenLSTMISP network adapts the original AiR implementation; zero guidance
 matches the OSIE initialization. Images are resized to 240x320 and the action
@@ -49,7 +55,7 @@ python src/IndividualScanpath/PerGAZE/ChenLSTMISP/src/train.py --smoke_test --ma
 
 # Resume the default run or evaluate all records
 python src/IndividualScanpath/PerGAZE/ChenLSTMISP/src/train.py --resume --epoch 30
-python src/IndividualScanpath/PerGAZE/ChenLSTMISP/src/test.py --split all
+python src/IndividualScanpath/PerGAZE/ChenLSTMISP/src/test.py --split validation
 
 python -m unittest discover -s src/IndividualScanpath/PerGAZE/ChenLSTMISP/tests
 ```
@@ -63,8 +69,8 @@ and `--eval_max_batches N` bound functional runs; zero processes the full split.
 Default output is this model's own `runs/` directory. It contains manifests,
 hyperparameters, validation/epoch reports, `checkpoints/checkpoint.pth`,
 `checkpoints/best.pth`, evaluation metrics and predicted scanpaths. Test/resume
-reuse checkpoint architecture, observer mapping and splits and verify input
-JSON SHA-256. Checkpoints from the other architecture are rejected.
+reuse checkpoint architecture, observer mapping and file membership and verify
+both input JSON SHA-256 hashes. Checkpoints from the other architecture are rejected.
 
 ScanMatch, SED and STDE are included; install `multimatch-gaze` for MultiMatch.
 Paths shorter than three fixations are excluded from MultiMatch only. Predicted
@@ -76,3 +82,9 @@ most likely cells and median durations; `--eval_repeat_num N` repeats sampling.
 The original metric copyright/GPL notices and architecture attribution are
 retained in source. Cite IndividualScanpath and the corresponding source
 models/datasets. Functional tests do not constitute full model training.
+
+`test.py` now evaluates the validation file (`test_seen.json`) by default and
+writes `evaluation_validation.json` and `predictions_validation.json`. This file
+is also used to select the best checkpoint during training. Use `--split train`
+or `--split all` only for diagnostic evaluation. No third held-out test set is
+created. Checkpoints from the former 80/10/10 split require a new training run.

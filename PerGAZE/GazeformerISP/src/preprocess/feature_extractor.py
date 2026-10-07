@@ -12,13 +12,14 @@ from opts import DATASET
 
 def main():
     parser = argparse.ArgumentParser(description="Generate PerGAZE semantic task embeddings")
-    parser.add_argument("--data_file", type=Path, default=DATASET / "PerGAZE.json")
+    parser.add_argument("--train_file", "--data_file", dest="train_file", type=Path, default=DATASET / "train.json")
+    parser.add_argument("--val_file", type=Path, default=DATASET / "test_seen.json")
     parser.add_argument("--output", type=Path, default=DATASET / "gazeformer_task_embeddings.npz")
     parser.add_argument("--lm_model", default="sentence-transformers/stsb-roberta-base-v2")
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
     from sentence_transformers import SentenceTransformer
-    tasks = sorted({r["task"] for r in read_records(args.data_file) if r["condition"] != "absent"})
+    tasks = sorted({r["task"] for r in read_records(args.train_file) + read_records(args.val_file) if r["condition"] != "absent"})
     encoder = SentenceTransformer(args.lm_model, device=args.device)
     vectors = encoder.encode(tasks, batch_size=32, show_progress_bar=True).astype(np.float32)
     args.output.parent.mkdir(parents=True, exist_ok=True)
