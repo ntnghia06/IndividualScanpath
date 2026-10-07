@@ -1,7 +1,6 @@
 import argparse
 import sys
 from pathlib import Path
-from presets import preset_defaults
 
 PROJECT = Path(__file__).resolve().parents[5]
 DATASET = PROJECT / "dataset/PerGAZED/dataset"
@@ -9,34 +8,31 @@ RUN = Path(__file__).resolve().parents[1] / "runs"
 
 
 def parse_opt(description="Train unified PerGAZE"):
-    selection = argparse.ArgumentParser(add_help=False)
-    selection.add_argument("--hyperparam_preset", choices=("air", "coco", "air_run", "coco_run"), default="air")
-    selected, _ = selection.parse_known_args()
-    parser = argparse.ArgumentParser(description=description, parents=[selection])
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--train_file", "--data_file", dest="train_file", type=Path, default=DATASET / "train.json")
     parser.add_argument("--val_file", type=Path, default=DATASET / "test_seen.json")
     parser.add_argument("--img_dir", type=Path, default=DATASET / "images")
     parser.add_argument("--att_dir", type=Path, default=DATASET / "attention_reasoning")
     parser.add_argument("--log_root", type=Path)
     parser.add_argument("--checkpoint", type=Path)
-    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=10)
     parser.add_argument("--device", default="auto", help="auto, cpu or cuda:0")
-    parser.add_argument("--batch", type=int, default=2)
+    parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--workers", type=int, default=0, help="0 works on Windows; increase on Linux")
-    parser.add_argument("--epoch", type=int, default=30)
-    parser.add_argument("--start_rl_epoch", type=int, default=20, help="Zero-based epoch; >= epoch disables RL")
+    parser.add_argument("--epoch", type=int, default=40)
+    parser.add_argument("--start_rl_epoch", type=int, default=25, help="Zero-based epoch; >= epoch disables RL")
     parser.add_argument("--rl_sample_number", type=int, default=5)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--rl_lr_initial_decay", type=float, default=.1)
     parser.add_argument("--weight_decay", type=float, default=5e-5)
-    parser.add_argument("--clip", type=float, default=12.5)
+    parser.add_argument("--clip", type=float, default=-1)
     parser.add_argument("--lambda_1", type=float, default=1.)
     parser.add_argument("--max_length", type=int, default=16)
     parser.add_argument("--min_length", type=int, default=1)
-    parser.add_argument("--blur_sigma", type=float, default=1.)
+    parser.add_argument("--blur_sigma", type=float, default=None)
     parser.add_argument("--embedding_dim", type=int, default=128)
     parser.add_argument("--action_map_num", type=int, default=4)
-    parser.add_argument("--dropout", type=float, default=.2)
+    parser.add_argument("--dropout", type=float, default=.4)
     parser.add_argument("--pretrained", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--max_batches", type=int, default=0, help="0 processes the entire split")
@@ -58,10 +54,9 @@ def parse_opt(description="Train unified PerGAZE"):
     parser.add_argument("--backbone_weights", choices=("coco", "imagenet"), default="coco")
     parser.add_argument("--test_batch", type=int, default=1)
     parser.add_argument("--warmup_epoch", type=int, default=1)
-    parser.add_argument("--no_eval_epoch", type=int)
-    parser.add_argument("--supervised_save", action=argparse.BooleanOptionalAction)
-    parser.add_argument("--rl_baseline", choices=("mean", "leave_one_out"))
-    parser.set_defaults(**preset_defaults(selected.hyperparam_preset))
+    parser.add_argument("--no_eval_epoch", type=int, default=5)
+    parser.add_argument("--supervised_save", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--rl_baseline", choices=("mean", "leave_one_out"), default="mean")
     args = parser.parse_args()
     args._provided_hyperparams = [token.split("=")[0].lstrip("-").replace("-", "_")
                                   for token in sys.argv[1:] if token.startswith("--")]

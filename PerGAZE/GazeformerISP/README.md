@@ -65,27 +65,25 @@ python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --smoke_test --max_length 3 --rl_sample_number 2 --batch 1 --log_root src/IndividualScanpath/PerGAZE/GazeformerISP/runs/smoke
 
 # Resume the default run or evaluate all records
-python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --resume --epoch 30
+python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --resume --epoch 40
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py --split validation
 
 python -m unittest discover -s src/IndividualScanpath/PerGAZE/GazeformerISP/tests
 ```
 
-Training hyperparameters default to `--hyperparam_preset air`, matching the
-original AiR `opts.py`. `coco` matches COCO `opts.py`; `air_run` and `coco_run`
-include overrides from their original `bash/train.sh`. CLI arguments override
-the selected preset. Data files, subject mapping and the chosen image geometry
-remain PerGAZE-specific. Batch counts individual scanpaths, whereas the original
-loaders count groups of observers.
-
-Both models use original one-epoch warmup, linear supervised LR decay and
-linear RL LR decay with multiplier 0.1. Gaussian target blur is disabled.
-Validation uses separate `--test_batch 1`, with the preset's `no_eval_epoch`.
-RL defaults to the original all-sample mean baseline. `clip=-1` in Gazeformer
-presets disables gradient clipping. Schedulers are saved in checkpoints.
-`--device auto` selects CUDA if available. `--no-pretrained` uses random
-backbone weights. `--workers 0` is Windows-safe. Batch limits remain available
-for functional checks; zero processes the full split.
+Training defaults directly match the original AiR `opts.py` plus its
+`bash/train.sh` overrides. No configuration selector is needed:
+40 epochs, start RL at index 25, train batch 1, max/min
+fixations 16/1, seed 10, clipping disabled, head dropout 0.4 and validation
+starting at epoch index 6.
+Both models use one-epoch warmup and linear supervised/RL learning-rate decay,
+LR 1e-4, RL multiplier 0.1, weight decay 5e-5, validation batch 1 and five RL
+samples with a mean reward baseline. Target blur is disabled. Data files and
+image geometry remain PerGAZE-specific. Individual CLI flags can override
+these defaults. Batch counts individual scanpaths, whereas original loaders
+count groups of observers. `--no-pretrained` uses random backbone weights.
+`--workers 0` is Windows-safe. Batch limits are available for functional checks;
+zero processes the full split.
 
 Default output is this model's own `runs/` directory. It contains manifests,
 hyperparameters, validation/epoch reports, `checkpoints/checkpoint.pth`,
@@ -130,37 +128,15 @@ is also used to select the best checkpoint during training. Use `--split train`
 or `--split all` only for diagnostic evaluation. No third held-out test set is
 created. Checkpoints from the former 80/10/10 split require a new training run.
 
-## Hyperparameter presets
+## Training and resume settings
 
-Choose the original source's defaults or its published run script:
+Run `python src/train.py` with your data paths; all defaults already match the
+original AiR run script. `epoch > no_eval_epoch` enables validation.
+`checkpoint.pth` is saved at every epoch even if validation is deferred;
+`best.pth` is saved when validation improves. `supervised.pth` is saved
+immediately before RL. Reports include learning rate and validation score.
 
-```powershell
-python src/train.py --hyperparam_preset air
-python src/train.py --hyperparam_preset coco
-python src/train.py --hyperparam_preset air_run
-python src/train.py --hyperparam_preset coco_run
-```
-
-| Preset | Epochs | Start RL (zero-based) | Train batch | Max/min fixations | Seed | Val after epoch index |
-| --- | --- | --- | --- | --- | --- | --- |
-| air | 40 | 25 | 1 | 16 / 1 | 0 | 5 |
-| coco | 40 | 25 | 3 | 7 / 1 | 0 | 5 |
-| air_run | 40 | 25 | 1 | 16 / 1 | 10 | 5 |
-| coco_run | 40 | 20 | 3 | 7 / 1 | 10 | 5 |
-
-Gazeformer head dropout is 0.4, encoder dropout 0.1 and decoder dropout 0.2.
-The requested 1024x768 image / 512x352 scanpath geometry is preserved.
-
-`epoch > no_eval_epoch` enables validation. `checkpoint.pth` is still saved
-at every epoch even if validation is deferred; `best.pth` is saved only after
-validation improves. `supervised.pth` is saved immediately before RL by default,
-instead of copying the entire run directory like the original scripts.
-Reports now include learning rate and validation score.
-
-Old fixed-LR checkpoints require a fresh run. Resume restores saved training
-hyperparameters and scheduler state; explicit conflicting hyperparameters or
-a changed batch limit are rejected. `--epoch` can extend the target duration.
-Evaluation can use an old checkpoint because it does not resume the scheduler.
-For a two-GPU ChenLSTM run, `--batch 4` is a hardware override, not the original
-preset batch. Validation batch 1 uses only one GPU per batch; override
-`--test_batch` if desired.
+Resume restores saved training settings and scheduler state; explicit
+conflicting hyperparameters or a changed batch limit are rejected. `--epoch`
+can extend the target duration. Older fixed-LR checkpoints need a new run.
+The selected PerGAZE dataset files and image/scanpath geometry are unchanged.

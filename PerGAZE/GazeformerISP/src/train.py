@@ -13,7 +13,7 @@ from runtime import (setup, dataset, loader, model, move, forward, evaluate, wri
                      load_checkpoint, restore_config)
 from utils.evaluation import Metrics
 from schedule import learning_rate_factor
-from presets import restore_training_settings
+from training_settings import restore_training_settings
 
 
 def rl_loss(network, batch, args, metrics):
@@ -98,7 +98,7 @@ def main():
         raise FileExistsError(f"Existing checkpoint: use --resume or a new --log_root: {checkpoint_path}")
     print({"records": len(records), "subjects": len(manifest["subjects"]), "splits": split_counts(records, manifest),
            "device": str(device)}, flush=True)
-    print({"hyperparam_preset": args.hyperparam_preset, "max_length": args.max_length,
+    print({"max_length": args.max_length,
            "train_batch": args.batch, "validation_batch": args.test_batch}, flush=True)
     network = model(args, manifest, device, pretrained=False if checkpoint else None)
     optimizer = torch.optim.Adam(network.parameters(), lr=args.lr, weight_decay=args.weight_decay)

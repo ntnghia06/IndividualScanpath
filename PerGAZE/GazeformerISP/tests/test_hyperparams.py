@@ -10,44 +10,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 from opts import parse_opt
-from presets import preset_defaults, restore_training_settings
+from training_settings import TRAINING_KEYS, restore_training_settings
 from schedule import learning_rate_factor
 
 
 class HyperparameterTest(unittest.TestCase):
-    def test_presets_match_original_opts(self):
+    def test_defaults_match_original_air_opts_and_run_script(self):
         model_root = Path(__file__).resolve().parents[1]
-        architecture = model_root.name
-        individual_root = model_root.parents[1]
-        for preset, dataset in (("air", "AiR"), ("coco", "COCO_Search18")):
-            tree = ast.parse((individual_root / dataset / architecture / "src/opts.py").read_text())
-            original = {}
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument" and node.args:
-                    name = ast.literal_eval(node.args[0]).lstrip("-")
-                    default = next((kw.value for kw in node.keywords if kw.arg == "default"), None)
-                    if default is not None:
-                        original[name] = ast.literal_eval(default)
-            defaults = preset_defaults(preset)
-            if architecture == "GazeformerISP":
-                original["dropout"] = original["cls_dropout"]
-                original["embedding_dim"] = original["subject_feature_dim"]
-            for key in defaults.keys() & original.keys():
-                self.assertEqual(defaults[key], original[key], f"{architecture} {preset} {key}")
-
-    def test_run_presets_match_original_shell_overrides(self):
-        model_root = Path(__file__).resolve().parents[1]
-        for name, dataset in (("air", "AiR"), ("coco", "COCO_Search18")):
-            script = (model_root.parents[1] / dataset / model_root.name / "bash/train.sh").read_text()
-            settings = preset_defaults(name + "_run")
-            for key, value in re.findall(r"--(seed|epoch|start_rl_epoch)\s+(\d+)", script):
-                self.assertEqual(settings[key], int(value))
-
-    def test_cli_overrides_preset(self):
-        with patch.object(sys, "argv", ["train.py", "--hyperparam_preset", "coco", "--batch", "4"]):
+        source = model_root.parents[1] / "AiR" / model_root.name
+        original = {}
+        for node in ast.walk(ast.parse((source / "src/opts.py").read_text())):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument" and node.args:
+                name = ast.literal_eval(node.args[0]).lstrip("-")
+                default = next((kw.value for kw in node.keywords if kw.arg == "default"), None)
+                if default is not None:
+                    original[name] = ast.literal_eval(default)
+        for key, value in re.findall(r"--(seed|epoch|start_rl_epoch)\s+(\d+)", (source / "bash/train.sh").read_text()):
+            original[key] = int(value)
+        if model_root.name == "GazeformerISP":
+            original["dropout"] = original["cls_dropout"]
+            original["embedding_dim"] = original["subject_feature_dim"]
+        with patch.object(sys, "argv", ["train.py"]):
             args = parse_opt()
-        self.assertEqual(args.max_length, 7)
+        for key in set(TRAINING_KEYS) | {"epoch"}:
+            if key in original:
+                self.assertEqual(getattr(args, key), original[key], key)
+        self.assertFalse(hasattr(args, "hyperparam_preset"))
+
+    def test_cli_can_override_direct_defaults(self):
+        with patch.object(sys, "argv", ["train.py", "--batch", "4", "--epoch", "45"]):
+            args = parse_opt()
+        self.assertEqual(args.epoch, 45)
         self.assertEqual(args.batch, 4)
+        self.assertEqual(args.max_length, 16)
         self.assertIsNone(args.blur_sigma)
         self.assertEqual(args.test_batch, 1)
 
@@ -62,13 +57,14 @@ class HyperparameterTest(unittest.TestCase):
                 expected = .1 * (1 - (step - 200) / 100)
             self.assertAlmostEqual(learning_rate_factor(step, args, 10), expected)
 
-    def test_resume_restores_schedule_and_keeps_requested_target_epoch(self):
-        saved = {**preset_defaults("coco"), "hyperparam_preset": "coco"}
-        args = SimpleNamespace(**preset_defaults("air"), hyperparam_preset="air", _provided_hyperparams=["epoch"])
-        args.epoch = 45
+    def test_resume_restores_saved_settings_and_keeps_requested_target_epoch(self):
+        with patch.object(sys, "argv", ["train.py"]):
+            saved = vars(parse_opt()).copy()
+        saved["max_length"] = 7
+        with patch.object(sys, "argv", ["train.py", "--epoch", "45"]):
+            args = parse_opt()
         restore_training_settings(args, saved)
         self.assertEqual(args.max_length, 7)
-        self.assertEqual(args.hyperparam_preset, "coco")
         self.assertEqual(args.epoch, 45)
 
     def test_scheduler_state_resume_matches_continuous_run(self):
