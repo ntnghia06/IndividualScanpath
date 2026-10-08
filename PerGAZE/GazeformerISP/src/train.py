@@ -52,7 +52,7 @@ def smoke_test(args, records, manifest, device):
     indices = [next(i for i, (_, row) in enumerate(data.records) if row["condition"] == c)
                for c in ("present", "absent", "vqa")]
     network = model(args, manifest, device)
-    optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam([p for p in network.parameters() if p.requires_grad], lr=args.lr)
     checks = []
     for index in indices:
         smoke_batch = max(args.batch, len(args.gpu_ids), 1)
@@ -113,7 +113,7 @@ def main():
     print({"max_length": args.max_length,
            "train_batch": args.batch, "validation_batch": args.test_batch}, flush=True)
     network = model(args, manifest, device, pretrained=False if checkpoint else None)
-    optimizer = torch.optim.Adam(network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam([p for p in network.parameters() if p.requires_grad], lr=args.lr, weight_decay=args.weight_decay)
     start, best = 0, -float("inf")
     if checkpoint:
         load_model_state(network, checkpoint["model"])

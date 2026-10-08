@@ -32,12 +32,6 @@ def main():
                 raise ValueError("Invalid fixation/duration")
             clipped[row["condition"]] += int(((coords[:, 0] < 0) | (coords[:, 0] >= width)
                                             | (coords[:, 1] < 0) | (coords[:, 1] >= height)).sum())
-            # Gazeformer requires cached visual/text features, not bbox guidance.
-            if path not in checked_boxes:
-                from dataset.features import cache_path, load_features
-                cached, relative = cache_path(args.feature_dir, args.img_dir, row)
-                load_features(cached, relative)
-                checked_boxes.add(path)
         except (ValueError, OSError, KeyError) as error:
             errors.append({"index": i, "name": row["name"], "error": str(error)})
         if (i + 1) % 5000 == 0:

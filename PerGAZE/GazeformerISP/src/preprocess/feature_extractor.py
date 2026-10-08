@@ -108,7 +108,7 @@ def main():
     parser.add_argument("--img_dir", type=Path, default=DATASET / "images")
     parser.add_argument("--feature_dir", type=Path, default=DATASET / "gazeformer_image_features")
     parser.add_argument("--output", type=Path, default=DATASET / "gazeformer_task_embeddings.npz")
-    parser.add_argument("--mode", choices=("all", "images", "text"), default="all")
+    parser.add_argument("--mode", choices=("all", "images", "text"), default="text")
     parser.add_argument("--lm_model", default="sentence-transformers/stsb-roberta-base-v2")
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--gpu_ids", type=int, nargs="+")

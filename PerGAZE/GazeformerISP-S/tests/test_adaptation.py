@@ -44,8 +44,8 @@ class AdaptationTest(unittest.TestCase):
         archive = {"tasks": np.array(texts), "vectors": np.ones((3, 768), dtype=np.float32)}
         with patch("numpy.load", return_value=nullcontext(archive)):
             data = SubjectAdaptationDataset(tests, {**manifest, "record_splits": ["validation"] * 3},
-                    "images", "attention", split="validation", feature_dir="features", text_embeddings="text.npz")
-        with patch.object(SubjectAdaptationDataset, "load_visual", return_value=(torch.ones(2048, 24, 32), 10, 10)):
+                    "images", "attention", split="validation", text_embeddings="text.npz")
+        with patch.object(SubjectAdaptationDataset, "load_visual", return_value=(torch.ones(3, 8, 8), 10, 10)):
             for i, key in enumerate(("ta:7", "tp:7", "air:7")):
                 sample = data[i]
                 self.assertEqual(sample["subjects"].item(), manifest["subjects"][key])

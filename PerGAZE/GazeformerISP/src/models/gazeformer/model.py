@@ -1,4 +1,4 @@
-"""ISP transformer/head using frozen COCO features and sentence embeddings."""
+"""ISP transformer/head with online frozen COCO image features and sentence embeddings."""
 import torch
 from torch import nn
 
@@ -13,6 +13,16 @@ class GazeformerISP(nn.Module):
         super().__init__()
         self.args = args
         self.grid = FEATURE_GRID
+        self._pretrained_backbone = pretrained
+        if pretrained:
+            from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
+            body = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.COCO_V1).backbone.body
+        else:
+            from torchvision.models import resnet50
+            body = resnet50(weights=None)
+        self.backbone = nn.Sequential(*[getattr(body, key) for key in
+            ("conv1", "bn1", "relu", "maxpool", "layer1", "layer2", "layer3", "layer4")])
+        self.backbone.requires_grad_(False).eval()
         args.im_h, args.im_w = self.grid
         args.subject_feature_dim = args.embedding_dim
         self.transformer = Transformer(d_model=args.hidden_dim, img_hidden_dim=2048,
@@ -39,13 +49,26 @@ class GazeformerISP(nn.Module):
             raise ValueError("Precomputed SentenceTransformer embeddings are required")
         return embeddings
 
-    def forward(self, features, subjects, attention_maps, task_tokens, task_mask, task_embeddings=None):
-        if features.ndim == 4:
-            if features.shape[1:] != (2048, *self.grid):
-                raise ValueError("Expected cached COCO features [batch, 2048, 24, 32]")
-            features = features.flatten(2).transpose(1, 2)
-        if features.shape[1:] != (self.grid[0] * self.grid[1], 2048):
-            raise ValueError("Invalid cached image feature shape")
+    def train(self, mode=True):
+        super().train(mode)
+        self.backbone.eval()
+        return self
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        # Older cached-feature checkpoints contain only the transformer/head.
+        if strict and not any(key.startswith("backbone.") for key in state_dict):
+            if not self._pretrained_backbone:
+                raise ValueError("Head-only checkpoint requires initialization with pretrained COCO backbone")
+            state_dict = {**{"backbone." + key: value for key, value in self.backbone.state_dict().items()},
+                          **state_dict}
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
+
+    def forward(self, images, subjects, attention_maps, task_tokens, task_mask, task_embeddings=None):
+        with torch.no_grad():
+            features = self.backbone(images)
+        if features.shape[1:] != (2048, *self.grid):
+            raise ValueError("Expected 1024x768 images producing a 24x32 COCO feature grid")
+        features = features.flatten(2).transpose(1, 2)
         return self.forward_features(features, subjects, attention_maps, task_tokens, task_mask, task_embeddings)
 
     def forward_features(self, features, subjects, attention_maps, task_tokens, task_mask, task_embeddings=None):

@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
+import torchvision.transforms as T
 from scipy.ndimage import gaussian_filter
 from torch.utils.data import Dataset
 
@@ -63,10 +64,9 @@ class PerGAZE(Dataset):
     def load_visual(self, row):
         with Image.open(image_path(self.image_dir, row)) as source:
             width, height = source.size
-            image = np.asarray(source.convert("RGB").resize(
-                (self.image_resize[1], self.image_resize[0]), Image.Resampling.BILINEAR), dtype=np.float32) / 255
-        image = torch.from_numpy(image.copy()).permute(2, 0, 1)
-        image = (image - torch.tensor([.485, .456, .406])[:, None, None]) / torch.tensor([.229, .224, .225])[:, None, None]
+            image = T.functional.to_tensor(source.convert("RGB"))
+        image = T.Resize(self.image_resize)(image)
+        image = T.Normalize([.485, .456, .406], [.229, .224, .225])(image)
         return image, width, height
 
     def guidance(self, row, width, height):

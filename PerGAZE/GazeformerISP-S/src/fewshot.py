@@ -78,6 +78,7 @@ def main():
     tests = read_records(args.test_file)
     chosen, selection = select_support(support_pool, args.k, args.seed)
     manifest = build_manifest(saved_base_manifest, chosen, tests)
+    manifest["image_backend"] = "online_coco_v1"
     manifest["metric_protocol"] = "original_mm_retrieval_duration_v2"
     if set(old_subjects) & set(manifest["adaptation_subjects"]):
         raise ValueError("Expected unseen support subjects; a support observer already exists in the base model")
@@ -93,7 +94,7 @@ def main():
             raise ValueError("Text embedding archive differs from the base checkpoint")
         provenance["text_embeddings"] = sha256(args.text_embeddings)
 
-    network = GazeformerISP(Namespace(**config), saved_base_manifest, pretrained=False)
+    network = GazeformerISP(Namespace(**config), saved_base_manifest, pretrained=not any(k.startswith("backbone.") for k in base["model"]))
     load_model_state(network, base["model"])
     expand_subject_embeddings(network, old_subjects, manifest["subjects"], args.init)
     del base, support_pool
@@ -109,7 +110,7 @@ def main():
     def make_data(split):
         return SubjectAdaptationDataset(records, manifest, args.img_dir, args.att_dir, split=split,
             max_length=config["max_length"], blur_sigma=config["blur_sigma"],
-            max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings, feature_dir=args.feature_dir)
+            max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
     train_loader = loader(args, make_data("train"), shuffle=True)
     test_loader = loader(args, make_data("validation"), evaluation=True)
     resolved = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}

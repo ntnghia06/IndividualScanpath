@@ -42,12 +42,13 @@ def setup(args):
         'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
     }
     manifest['geometry'] = GEOMETRY.copy()
+    manifest['image_backend'] = 'online_coco_v1'
     from dataset.text import add_text_manifest
     add_text_manifest(records, manifest)
     if args.text_embeddings is None:
         raise ValueError('Precompute sentence embeddings before training')
     if args.train_backbone or args.backbone_weights != 'coco':
-        raise ValueError('Gazeformer uses precomputed frozen COCO features')
+        raise ValueError('Gazeformer uses an online frozen COCO backbone')
     if args.text_embeddings:
         with np.load(args.text_embeddings, allow_pickle=False) as archive:
             args.text_dim = archive['vectors'].shape[1]
@@ -60,7 +61,7 @@ def dataset(args, records, manifest, split):
     cls, extra = (PerGAZE, {})
     from dataset.text import GazeformerPerGAZE
     cls = GazeformerPerGAZE
-    extra = {'text_embeddings': args.text_embeddings, 'max_text_length': args.max_text_length, 'feature_dir': args.feature_dir}
+    extra = {'text_embeddings': args.text_embeddings, 'max_text_length': args.max_text_length}
     return cls(records, manifest, args.img_dir, args.att_dir, split=split, max_length=args.max_length, blur_sigma=args.blur_sigma, **extra)
 
 def loader(args, data, shuffle=False, evaluation=False):
@@ -70,7 +71,11 @@ def loader(args, data, shuffle=False, evaluation=False):
 
 def model(args, manifest, device, pretrained=None):
     from models.gazeformer.model import GazeformerISP
-    network = GazeformerISP(args, manifest, pretrained=args.pretrained if pretrained is None else pretrained)
+    initialize = args.pretrained if pretrained is None else pretrained
+    if manifest.get('image_backend') != 'online_coco_v1':
+        initialize = True  # Restore the same fixed COCO backbone for head-only checkpoints.
+    network = GazeformerISP(args, manifest, pretrained=initialize)
+    manifest['image_backend'] = 'online_coco_v1'
     return wrap_model(network, device, args.gpu_ids)
 
 def move(batch, device):

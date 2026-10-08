@@ -1,8 +1,8 @@
 # PerGAZE GazeformerISP-S: k-shot subject embedding finetuning
 
-Requires a newly trained cached-v3 GazeformerISP base checkpoint: sentence
-embeddings, 769 actions and separate TA/TP identities. Earlier online-backbone,
-705-action or pooled-observer checkpoints are incompatible.
+Requires a compatible geometry-v3 GazeformerISP base checkpoint: sentence
+embeddings, 769 actions and separate TA/TP identities. Earlier 705-action
+or pooled-observer checkpoints are incompatible.
 
 Select exactly k support scanpaths per (condition, observer) using seed 10 by
 default, then finetune only new subject embedding rows for 3 supervised epochs.
@@ -13,29 +13,23 @@ from the mean of the corresponding seen population, or seeded random with
 
 ## Inputs
 
-- --checkpoint: best.pth or checkpoint.pth from the new v3 base training.
-- --support_file / --test_file: support.json / test_unseen.json.
-- --feature_dir: frozen COCO image feature .pth files, same cache format as base.
-- --text_embeddings: exact gazeformer_task_embeddings.npz used by base training,
-  including support/unseen questions and TA instructions. SHA-256 must match.
-- --img_dir: original image tree for resolving portable feature cache keys.
-
-The base notebook precomputes both encoders for all four splits. The few-shot
-notebook can reuse an imported image cache or extract support/unseen features
-before finetuning. It discovers the imported original NPZ, or accepts an explicit
-TEXT_EMBEDDINGS path. Do not regenerate a different archive for adaptation.
+Use a compatible GazeformerISP checkpoint with geometry-v3 (769 actions),
+separate TP/TA subjects and the original sentence archive. Images are read from
+--img_dir and processed online by the frozen COCO ResNet50 in each batch.
+No --feature_dir or pre-extracted image files are needed. The notebook prepares
+no image cache; TEXT_EMBEDDINGS points to the exact NPZ used by the base run.
+The NPZ must include support/unseen text and its SHA-256 must match.
 
 ## Run from D:/PerScan
 
 ```powershell
-python src/IndividualScanpath/PerGAZE/GazeformerISP-S/src/train.py --checkpoint PATH_TO_V3_BEST --k 5 --feature_dir PATH_TO_CACHE --text_embeddings PATH_TO_ORIGINAL_NPZ
+python src/IndividualScanpath/PerGAZE/GazeformerISP-S/src/train.py --checkpoint PATH_TO_BEST --k 5 --text_embeddings PATH_TO_ORIGINAL_NPZ
 ```
 
-Default k=5, seed=10, epoch=3, lr=1e-3, batch=2, test_batch=4. Supports
-DataParallel with --gpu_ids 0 1. Sampling is reproducible under record reordering.
-Support and test overlap is rejected. Evaluation uses the same RNG seed per epoch.
-The model stays in eval mode during finetuning; only masked new embedding rows
-receive gradients. Adam uses no weight decay and a fresh optimizer state.
+Defaults: k=5, seed=10, epoch=3, lr=1e-3, batch=2, test_batch=4. DataParallel
+supports --gpu_ids 0 1. Compatible head-only cached-feature checkpoints initialize
+the fixed pretrained COCO backbone before loading heads; new online checkpoints
+load their saved backbone without a download. Only new subject rows are adapted.
 
 ## Outputs and resume
 
@@ -46,14 +40,9 @@ Best score is the harmonic mean of the two ScanMatch means on test_unseen.
 This requested selection uses test_unseen itself, not an untouched test estimate.
 
 Import the whole run directory into Kaggle, restore it to RUN, retain original
-NPZ and image cache (or re-extract images), then add --resume with identical k,
+NPZ and original image input, then add --resume with identical k,
 seed and input files. src/test.py re-evaluates adapted best.pth and appends to
 report.json. Old pooled-TA/TP adaptation runs must not be resumed.
-
-
-The original-sigma2 sampling revision requires FP32 caches produced using
-ToTensor -> Resize -> Normalize. Re-extract earlier caches; old adaptation runs
-must restart because their evaluation sampling protocol differs.
 
 
 Few-shot eval now uses original-MM/retrieval/duration metrics, including padding

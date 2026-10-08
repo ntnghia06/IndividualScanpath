@@ -4,7 +4,6 @@ import torch
 
 from dataset.dataset import PerGAZE
 from dataset.schema import record_split
-from dataset.features import cache_path, load_features
 
 
 def task_text(row):
@@ -28,13 +27,12 @@ def add_text_manifest(records, manifest):
 
 
 class GazeformerPerGAZE(PerGAZE):
-    def __init__(self, *args, text_embeddings=None, feature_dir=None, max_text_length=64, **kwargs):
+    def __init__(self, *args, text_embeddings=None, max_text_length=64, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_text_length = max_text_length
         self.embeddings = None
-        self.feature_dir = feature_dir
-        if text_embeddings is None or feature_dir is None:
-            raise ValueError("Gazeformer requires precomputed --text_embeddings and --feature_dir")
+        if text_embeddings is None:
+            raise ValueError("Gazeformer requires precomputed --text_embeddings")
         if text_embeddings:
             # Safe NPZ of Unicode task strings plus a float matrix; no pickled dict.
             with np.load(text_embeddings, allow_pickle=False) as archive:
@@ -46,10 +44,6 @@ class GazeformerPerGAZE(PerGAZE):
             missing = {task_text(r) for _, r in self.records} - self.embeddings.keys()
             if missing:
                 raise ValueError(f"Missing {len(missing)} task embeddings")
-
-    def load_visual(self, row):
-        path, relative = cache_path(self.feature_dir, self.image_dir, row)
-        return load_features(path, relative)
 
     def guidance(self, row, width, height):
         # Gazeformer learns visual attention from image features and text.

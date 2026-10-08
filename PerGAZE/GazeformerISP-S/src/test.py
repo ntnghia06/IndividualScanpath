@@ -49,7 +49,7 @@ def main():
     args.eval_seed = checkpoint["adaptation_config"]["eval_seed"]
     args.greedy = checkpoint["adaptation_config"]["greedy"]
     args.eval_repeat_num = checkpoint["adaptation_config"]["eval_repeat_num"]
-    network = GazeformerISP(Namespace(**config), manifest, pretrained=False)
+    network = GazeformerISP(Namespace(**config), manifest, pretrained=not any(k.startswith("backbone.") for k in checkpoint["model"]))
     load_model_state(network, checkpoint["model"])
     network.requires_grad_(False)
     report_path = args.log_root / "report.json"
@@ -62,7 +62,7 @@ def main():
     manifest["record_splits"] = ["validation"] * len(tests)
     data = SubjectAdaptationDataset(tests, manifest, args.img_dir, args.att_dir, split="validation",
         max_length=config["max_length"], blur_sigma=config["blur_sigma"],
-        max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings, feature_dir=args.feature_dir)
+        max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
     summary, predictions = evaluate_seeded(network, loader(args, data, evaluation=True), args, device,
                                           "Adapted checkpoint evaluation on unseen")
     report["reevaluation"] = {"checkpoint": str(args.checkpoint), "score": score(summary),

@@ -27,7 +27,7 @@ class GazeformerTest(unittest.TestCase):
         cls.features = torch.randn(1, 2048, 24, 32)
 
     def predict(self, text, guidance=None):
-        return self.model(self.features, torch.tensor([0]), guidance,
+        return self.model.forward_features(self.features.flatten(2).transpose(1, 2), torch.tensor([0]), guidance,
                           torch.tensor([[0]]), torch.tensor([1.]), text)
 
     def test_grid_and_text_conditioning_without_external_guidance(self):
@@ -38,7 +38,8 @@ class GazeformerTest(unittest.TestCase):
         torch.testing.assert_close(a["all_actions_prob"].sum(-1), torch.ones(1, 2))
         torch.testing.assert_close(a["all_actions_prob"], c["all_actions_prob"], rtol=0, atol=0)
         self.assertGreater(float((a["all_actions_prob"] - b["all_actions_prob"]).abs().max()), 1e-8)
-        self.assertFalse(any("backbone" in name or "word_embed" in name for name, _ in self.model.named_parameters()))
+        self.assertFalse(any("word_embed" in name for name, _ in self.model.named_parameters()))
+        self.assertTrue(all(not p.requires_grad for p in self.model.backbone.parameters()))
 
     def test_supervised_backward_from_cached_features(self):
         self.model.train()
@@ -48,7 +49,7 @@ class GazeformerTest(unittest.TestCase):
         self.model.zero_grad(set_to_none=True)
         self.model.eval()
 
-    def test_cached_dataset_ta_uses_instruction_and_never_reads_attention_map(self):
+    def test_online_dataset_ta_uses_instruction_and_never_reads_attention_map(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
             root = Path(tmp)
             rows = [{"name": "a.jpg", "condition": condition, "subject": 1, "task": "car",
@@ -65,10 +66,9 @@ class GazeformerTest(unittest.TestCase):
             np.savez(root / "text.npz", tasks=np.asarray(texts), vectors=np.stack([
                 np.ones(768), np.full(768, 2)]).astype(np.float32))
             data = GazeformerPerGAZE(rows, make_manifest(rows), root, "missing_attention", split="all",
-                                    feature_dir=root, text_embeddings=root / "text.npz")
-            with patch("dataset.dataset.Image.open", side_effect=AssertionError("No decoding during train")):
-                tp, ta = data[0], data[1]
-            self.assertEqual(tuple(ta["images"].shape), (2048, 24, 32))
+                                    text_embeddings=root / "text.npz")
+            tp, ta = data[0], data[1]
+            self.assertEqual(tuple(ta["images"].shape), (3, 768, 1024))
             self.assertEqual(ta["images"].dtype, torch.float32)
             self.assertEqual(ta["task_mask"].item(), 1.)
             torch.testing.assert_close(ta["task_embeddings"], torch.full((768,), 2.))
@@ -99,3 +99,32 @@ class GazeformerTest(unittest.TestCase):
             actual, width, height, *_ = ImageInputs([("image.jpg", "cache.pth", "image.jpg")])[0]
         self.assertEqual((width, height), (19, 13))
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    def test_online_forward_freezes_backbone_and_preserves_eval_mode(self):
+        self.model.train()
+        self.assertFalse(self.model.backbone.training)
+        class StubBackbone(torch.nn.Module):
+            def forward(self, images):
+                return torch.ones(len(images), 2048, 24, 32, device=images.device)
+        images = torch.randn(1, 3, 32, 32, requires_grad=True)
+        with patch.object(self.model, "backbone", StubBackbone().eval()):
+            result = self.model(images, torch.tensor([0]), None, torch.zeros(1, 1, dtype=torch.long),
+                                torch.ones(1), torch.randn(1, 768))
+            result["actions"].square().mean().backward()
+        self.assertIsNone(images.grad)
+        self.assertTrue(all(p.grad is None for p in self.model.backbone.parameters()))
+        self.model.zero_grad(set_to_none=True)
+        self.model.eval()
+
+    def test_head_only_checkpoint_requires_pretrained_backbone_and_strict_heads(self):
+        state = {k: v for k, v in self.model.state_dict().items() if not k.startswith("backbone.")}
+        with self.assertRaisesRegex(ValueError, "pretrained COCO"):
+            self.model.load_state_dict(state)
+        self.model._pretrained_backbone = True
+        try:
+            self.model.load_state_dict(state)
+            damaged = {k: v for k, v in state.items() if k != "stop.weight"}
+            with self.assertRaises(RuntimeError):
+                self.model.load_state_dict(damaged)
+        finally:
+            self.model._pretrained_backbone = False

@@ -1,133 +1,66 @@
-# PerGAZE GazeformerISP (cached features, geometry v3)
+# PerGAZE GazeformerISP: online image features
 
-Train on train.json, validate on test_seen.json. Defaults: 5 supervised epochs,
-5 RL epochs, one warmup epoch. TP/TA/VQA subject identities are independent.
+Train on train.json, validate on test_seen.json. Defaults remain 5 supervised
+and 5 RL epochs with one warmup epoch. TP/TA/VQA observers are independent.
 
-## Inputs and architecture
+## Image and text inputs
 
-- Frozen MaskRCNN COCO ResNet50: resize images to 1024x768; cache features
-  [2048,24,32] in .pth files. Each file retains original image dimensions.
-- SentenceTransformer sentence-transformers/stsb-roberta-base-v2 produces
-  768-dimensional vectors saved in gazeformer_task_embeddings.npz.
-- TP text: object name. VQA text: question in task. TA text:
-  "Search for the <object> in the image." All conditions use text.
-- Gazeformer learns visual attention from image features and sentence embeddings.
-  It does not consume bbox/attention_reasoning maps and has no 50/50 prior blend.
-- Prediction grid 24x32: 769 actions including STOP, without logit interpolation.
-  Scanpath coordinates remain width=512, height=352. Cell indices are obtained
-  by proportional scaling; decoding returns cell centers in this frame.
-- No backbone or learned word embedding is included in the training model.
-  --train_backbone and non-COCO backbone selection are rejected.
+Images are decoded on demand during train, validation and test. Preprocessing is
+ToTensor -> Resize((768,1024)) -> Normalize. The frozen COCO MaskRCNN ResNet50
+backbone runs inside each model batch, producing 2048x24x32 features. Backbone
+parameters and BatchNorm buffers are frozen; train() keeps the backbone in eval
+mode. No .pth feature cache is read or written by training/evaluation.
 
-ChenLSTMISP keeps its original trainable ImageNet dilated ResNet50 and guidance
-maps, as requested. Its image/scanpath geometry remains 320x240 and 30x40.
+SentenceTransformer stsb-roberta-base-v2 text vectors are still prepared once,
+as gazeformer_task_embeddings.npz. TP encodes object names, VQA encodes questions,
+and TA encodes "Search for the <object> in the image." All vectors are 768D.
+Gazeformer learns attention from image features and text without external bbox/
+attention maps. Its action grid is 24x32 (769 actions including STOP), with
+scanpath coordinates width=512, height=352. ChenLSTM remains independent.
 
-## Precompute, then train (from D:/PerScan)
+## Prepare text, then train (from D:/PerScan)
 
 ```powershell
-conda activate cs117
 pip install -r src/IndividualScanpath/PerGAZE/GazeformerISP/requirements.txt
-python src/IndividualScanpath/PerGAZE/GazeformerISP/src/preprocess/feature_extractor.py --batch 4 --device cuda:0
+python src/IndividualScanpath/PerGAZE/GazeformerISP/src/preprocess/feature_extractor.py --mode text --device cuda:0
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --gpu_ids 0 1 --workers 2
 ```
 
-The extractor defaults to the local dataset folder and includes train, test_seen,
-support and test_unseen when present. --files explicitly selects JSON files.
-Frozen encoders use only image pixels and task text, never scanpath labels.
---mode images/text/all selects the preprocessing stage. Existing valid image
-caches are reused; --overwrite replaces them. Default .pth storage and model inputs are FP32.
-A feature file takes about 6 MiB. Cache filenames hash relative image
-paths, preventing collisions between conditions/tasks with identical filenames.
-
-Use --feature_dir and --text_embeddings to relocate caches in train/test.
-Missing or incompatible caches fail with an error; there is no online fallback.
-The sentence archive must cover every task text being evaluated. Resume checks
-its SHA-256 and JSON split hashes. Keep the same archive contents when relocating.
+The text extractor includes train/test_seen/support/test_unseen when present.
+--files explicitly chooses JSON files. The frozen text encoder never uses gaze
+labels. Train/test require --img_dir and --text_embeddings, not --feature_dir.
+Legacy image-extraction utilities remain available only for explicit use and
+are not part of the default pipeline.
 
 ## Kaggle
 
-Open kaggle_gazeformer_2gpu.ipynb and enable GPU/internet. The notebook installs
-sentence-transformers, runs batched COCO ResNet extraction on available GPUs,
-encodes all four JSON splits, and then trains from /kaggle/working caches.
-Train remains DataParallel on two visible GPUs. Cache extraction batch and train
-batch are separate settings. Input datasets are read-only; outputs go to working.
+Use kaggle_gazeformer_2gpu.ipynb. Enable GPU and internet for downloading weights
+once. Setup prepares text embeddings only, then train and test directly read
+DATA/images. Online ResNet is replicated by DataParallel on both visible GPUs.
+Keep the whole run directory and text NPZ for resume or GazeformerISP-S; image
+cache files are unnecessary. Delete obsolete caches manually if they occupy disk.
 
-Retain the full run, gazeformer_task_embeddings.npz and optionally the image
-cache as Kaggle output. Re-extract images if the cache is not imported next
-session; point FEATURE_DIR/TEXT_FILE to imported artifacts to reuse them.
+## Checkpoints
 
-Outputs: hparams.json, manifest.json, epoch_*.json, checkpoints/checkpoint.pth,
-best.pth and supervised.pth. Best score is the harmonic mean of the two ScanMatch
-validation means. Test uses the same cached inputs and writes evaluation JSON.
+New checkpoints include frozen backbone weights and original text archive hash.
+Resume restores model, optimizer, scheduler and RNG. The optimizer contains
+trainable transformer/head/subject parameters only, matching older head-only
+cached-feature checkpoints. Compatible cached-v3 checkpoints initialize the
+same pretrained COCO backbone and load their heads strictly. Older geometry,
+subject, text or loss/metric protocols retain the existing compatibility checks.
+GazeformerISP-S also supports compatible head-only checkpoints by initializing
+the frozen pretrained backbone, then adapting only new subject embedding rows.
 
-## Checkpoint migration
+## Metrics and outputs
 
-This revision changes text backend, action grid and subject identities.
-Earlier online-backbone/705-action or pooled-TA/TP checkpoints cannot resume or
-be passed to GazeformerISP-S. Train a new v3 base model. GazeformerISP-S uses
-its exact original sentence archive and cached support/unseen image features.
+Supervised action loss uses log(softmax+1e-7); duration loss and RL duration
+handling follow the original implementation. ScanMatch uses 16x12 bins;
+MultiMatch pads short paths to 3 fixations and drops the full 5D MM vector when
+one component is invalid. Retrieval temporal ScanMatch is independent of MM.
+Reports contain overall/per-condition/per-subject metrics, padding counts,
+retrieval matrices and R@1/3/5/10/MRR. SED retains the corrected region handling.
 
-
-## Original RL and FP32 revision
-
-RL now sums trial losses with batch-wide mask denominators. Sampling uses
-exp(mu + noise * sigma2) as in the original implementation. STOP-masked
-probabilities select actions; unmasked probabilities supply log-probabilities.
-Duration parameter clamps remain removed; RL clips duration at the original
-condition-specific positions described below. Invalid model parameters stop explicitly. Checkpoints from the earlier RL protocol cannot resume training.
-Gazeformer uses FP32 feature caches and ToTensor -> Resize -> Normalize.
-Its old feature caches must be re-extracted using --mode images --overwrite;
-casting old FP16 values to FP32 is not supported as a migration.
-
-
-## Original metric and duration protocol
-
-ScanMatch uses 16x12 bins. MultiMatch pads each scanpath to at least 3 fixations
-using (1,1,0.001) as in the original evaluator. Reports count padded target,
-prediction and pair comparisons, and retain null values with valid_count=0 when
-MultiMatch is undefined. The former temporal-score outlier cutoff is removed.
-
-Evaluation reports retrieval under retrieval: temporal ScanMatch score matrices,
-R@1/3/5/10 in percent, MRR and rank statistics, overall and by condition. Groups
-use condition + image + task + question ID + repeat. Candidate observers remain
-condition-specific. Reports include candidate counts and single-candidate queries.
-Duplicate ground truths for one observer use their maximum similarity. All-invalid
-rows are excluded, invalid cells rank as -1, and ties follow original reverse
-numpy argsort. Metrics describe only evaluated records if a batch limit is used.
-
-RL resamples nonfinite reward trials; a retry limit produces an explicit error
-instead of an endless loop. ChenLSTM TP/TA clips sampled duration to 3 seconds
-before creating reward paths and duration loss. ChenLSTM VQA and Gazeformer
-use raw sampled duration for reward, then clip only duration-loss input to
-0..100 seconds. Duration log-density and supervised/RL masks use the original
-formula with epsilon=1e-7. Eval/test sampling is not clipped, matching the original
-evaluation path. Structural invalid model parameters still cause explicit errors.
-
-Earlier checkpoint weights can be evaluated with this metric protocol when
-architecture-compatible. Start a new run instead of resuming old best-score,
-optimizer or RL state across the protocol change. Cached image features and
-sentence vectors do not need regeneration for this revision.
-
-
-## Metric protocol v2 and original supervised action loss
-
-Supervised action loss now uses log(softmax(logits)+1e-7) with the original mask
-and normalization. An invalid MultiMatch component excludes all five MM values
-for that pair; all five valid_count fields therefore use the same comparisons.
-Retrieval computes temporal ScanMatch regardless of MM validity. RL still rejects
-invalid MultiMatch reward trials, matching original pairs_eval. Old weights can
-be re-evaluated; start a new training run rather than mixing loss/metric protocols.
-
-
-## Lossless feature storage fix
-
-The extractor clones each feature before saving, so a slice never serializes the
-entire batch storage. Default --compression gzip compresses .pth containers
-losslessly: all feature values remain bit-identical FP32. Loaders transparently
-read both raw torch files and gzip containers. --compression none retains raw
-6 MiB files, which need approximately 34.5 GiB for the current 5,888-image dataset.
-Existing valid raw caches are compacted and compressed in place when extracting
-with gzip; no GPU extraction is needed for those images. Failed writes clean up
-partial .tmp files and report available disk space. If the previous failed run
-left the working disk full, remove only its feature cache folder or start a new
-session before preprocessing. Retain the sentence archive and model run files.
+Outputs include hparams.json, manifest.json, epoch_*.json and checkpoints/
+checkpoint.pth, best.pth and supervised.pth. Best is selected by the harmonic
+mean of the two ScanMatch validation means. Test writes report and prediction
+JSON files. TensorBoard and grouped observer batching remain outside this change.
