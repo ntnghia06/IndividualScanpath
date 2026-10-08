@@ -6,6 +6,7 @@ import sys
 import numpy as np
 
 from models.resnet import resnet50, resnet18
+from dataset.tasks import OBJECT_NAMES
 epsilon = 1e-7
 
 
@@ -311,6 +312,10 @@ class baseline(nn.Module):
         self.semantic_att = semantic_att(embed_size=512)
         self.spatial_att = spatial_att(map_width, map_height)
 
+        self.object_name = list(OBJECT_NAMES)
+        self.int2object = dict(enumerate(OBJECT_NAMES))
+        self.object_sal_layer = nn.ModuleDict({name: nn.Conv2d(512, 512,
+            kernel_size=5, padding=2, stride=1, bias=True) for name in OBJECT_NAMES})
         self.performance_sal_layer = nn.Conv2d(512, 512, kernel_size=5, padding=2, stride=1, bias=True)
         self.object_head = predict_head(convLSTM_length, action_map_num, embedding_dim)
 
@@ -369,19 +374,34 @@ class baseline(nn.Module):
         return channel_semantic_feature
 
 
-    def forward(self, images, subject, attention_maps):
+    def route_task_features(self, output, task_heads):
+        """Group by task while preserving sample order and autograd."""
+        if task_heads.ndim != 1 or len(task_heads) != len(output) or task_heads.dtype != torch.long:
+            raise ValueError("task_heads must be one int64 index per sample")
+        features = torch.zeros_like(output)
+        for head in task_heads.unique().tolist():
+            if not -1 <= head < len(self.object_name):
+                raise ValueError(f"Invalid task head: {head}")
+            indices = torch.where(task_heads == head)[0]
+            layer = (self.performance_sal_layer if head == -1 else
+                     self.object_sal_layer[self.int2object[head]])
+            selected = layer(output.index_select(0, indices))
+            features = features.index_copy(0, indices, selected)
+        return features
+
+    def forward(self, images, subject, attention_maps, task_heads):
         # scanpath is used for the extract embedding feature to the ConvLSTM modules  (We do not use it at this model)
         # durations is used in the ConvLSTM modules (We do not use it at this model)
         # active_scanpath_temporal_masks is used for training the saliency map and obtained from duration_masks
 
         if self.training:
-            predicts = self.training_process(images, subject, attention_maps)
+            predicts = self.training_process(images, subject, attention_maps, task_heads)
         else:
-            predicts = self.inference(images, subject, attention_maps)
+            predicts = self.inference(images, subject, attention_maps, task_heads)
 
         return predicts
 
-    def training_process(self, images, subject, attention_maps):
+    def training_process(self, images, subject, attention_maps, task_heads):
         # img = img.unsqueeze(0)
         batch, _, height, width = images.size()# build a one-hot performance embedding
 
@@ -417,7 +437,7 @@ class baseline(nn.Module):
         for i in range(self.convLSTM_length):
             output, state = self.lstm(visual_feature, state, spatial_mem, semantic_mem)
 
-            feature = self.performance_sal_layer(output)
+            feature = self.route_task_features(output, task_heads)
 
             predict_head_rlts = self.object_head(visual_feature, feature, subj_embedding)
 
@@ -461,7 +481,7 @@ class baseline(nn.Module):
         predicts['log_normal_sigma2'] = predict["log_normal_sigma2"]
         return predicts
 
-    def inference(self, images, subject, attention_maps):
+    def inference(self, images, subject, attention_maps, task_heads):
         # img = img.unsqueeze(0)
         batch, _, height, width = images.size()  # build a one-hot performance embedding
 
@@ -497,7 +517,7 @@ class baseline(nn.Module):
         for i in range(self.convLSTM_length):
             output, state = self.lstm(visual_feature, state, spatial_mem, semantic_mem)
 
-            feature = self.performance_sal_layer(output)
+            feature = self.route_task_features(output, task_heads)
 
             predict_head_rlts = self.object_head(visual_feature, feature, subj_embedding)
 
@@ -550,7 +570,7 @@ class baseline(nn.Module):
         return predicts
 
     def init_weights(self):
-        for modules in [self.sal_conv.modules(), self.performance_sal_layer.modules(),
+        for modules in [self.sal_conv.modules(), self.object_sal_layer.modules(), self.performance_sal_layer.modules(),
                         self.semantic_embed.modules(), self.spatial_embed.modules(),
                         self.semantic_subj_embed.modules(), self.semantic_subj_embed.modules(), self.subject_embedding.modules()]:
             for m in modules:

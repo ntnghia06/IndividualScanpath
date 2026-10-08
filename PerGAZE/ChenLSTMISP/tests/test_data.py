@@ -53,6 +53,9 @@ class PerGAZETest(unittest.TestCase):
         manifest = make_manifest(self.records)
         data = PerGAZE(self.records, manifest, self.root, self.root / "attention", split="all", max_length=4, blur_sigma=0)
         row = data[0]
+        self.assertEqual(row["task_heads"].item(), 0)
+        self.assertEqual(data[1]["task_heads"].item(), 0)
+        self.assertEqual(data[2]["task_heads"].item(), -1)
         np.testing.assert_allclose(row["fix_vectors"][0], [160, 120, .2])
         self.assertLess(row["fix_vectors"][1, 0], 320)
         self.assertEqual(row["fix_vectors"][1, 1], 0)

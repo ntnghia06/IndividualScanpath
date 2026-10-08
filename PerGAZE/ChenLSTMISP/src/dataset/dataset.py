@@ -9,6 +9,7 @@ from scipy.ndimage import gaussian_filter
 from torch.utils.data import Dataset
 
 from dataset.schema import record_split, image_path, subject_key
+from dataset.tasks import task_head
 
 
 def load_guidance(row, attention_dir, image_size, map_size=(30, 40)):
@@ -83,6 +84,7 @@ class PerGAZE(Dataset):
             targets[count:, 0] = 1
             action_mask[count] = 1  # supervise exactly one stop action
         return {"images": image, "subjects": torch.tensor(self.manifest["subjects"][subject_key(row)]),
+                "task_heads": torch.tensor(task_head(row), dtype=torch.long),
                 "attention_maps": torch.from_numpy(load_guidance(row, self.attention_dir, (width, height))),
                 "target_scanpaths": torch.from_numpy(targets), "durations": torch.from_numpy(durations),
                 "action_masks": torch.from_numpy(action_mask), "duration_masks": torch.from_numpy(duration_mask),

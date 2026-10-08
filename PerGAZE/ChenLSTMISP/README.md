@@ -156,3 +156,16 @@ explicit error. Checkpoints from the earlier RL protocol cannot resume training.
 Gazeformer uses FP32 feature caches and ToTensor -> Resize -> Normalize.
 Its old feature caches must be re-extracted using --mode images --overwrite;
 casting old FP16 values to FP32 is not supported as a migration.
+
+
+## Hybrid COCO object heads and AIR VQA head
+
+TP/TA use 18 independent Conv2d(512,512,kernel_size=5,padding=2) layers,
+selected by the original COCO object order. TP and TA for the same object share
+that object's layer. VQA uses the separate performance_sal_layer from AIR.
+All branches feed the original shared predict_head for action/STOP/duration.
+The routing is used in supervised training, RL and evaluation, including mixed
+condition batches. Unknown TP/TA tasks fail explicitly. task_heads is int64,
+0..17 for objects and -1 for VQA; task mapping is saved in manifest/checkpoints.
+Old shared-head checkpoints require a new run. The additional 18 convolutions
+add 117,974,016 trainable parameters and increase GPU memory usage.

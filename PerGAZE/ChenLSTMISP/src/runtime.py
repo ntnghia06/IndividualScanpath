@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from dataset.dataset import PerGAZE, collate_func
 from dataset.schema import make_file_manifest, read_records
+from dataset.tasks import HEAD_SCHEMA, OBJECT_TO_INDEX, task_head
 from models.baseline_attention import baseline
 from models.sampling import sample_scanpaths
 from utils.evaluation import Metrics, summarize
@@ -35,6 +36,11 @@ def setup(args):
     validation_records = read_records(args.val_file)
     records = train_records + validation_records
     manifest = make_file_manifest(train_records, validation_records)
+    for row in records:
+        task_head(row)
+    manifest['task_head_schema'] = HEAD_SCHEMA
+    manifest['object_to_head'] = OBJECT_TO_INDEX.copy()
+    manifest['vqa_head'] = -1
     manifest['training_protocol'] = 'original_rl_v1'
     manifest['sources'] = {
         'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
@@ -59,7 +65,7 @@ def move(batch, device):
     return {key: value.to(device, non_blocking=True) if torch.is_tensor(value) else value for key, value in batch.items()}
 
 def forward(model, batch):
-    return model(batch['images'], batch['subjects'], batch['attention_maps'])
+    return model(batch['images'], batch['subjects'], batch['attention_maps'], batch['task_heads'])
 
 def evaluate(model, batches, args, device, limit=0, description="Evaluation"):
     model.eval()
@@ -83,6 +89,9 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
+    if (saved_manifest.get('task_head_schema') != HEAD_SCHEMA
+            or saved_manifest.get('object_to_head') != OBJECT_TO_INDEX):
+        raise ValueError('Checkpoint lacks the 18 TP/TA object heads; start a new training run')
     if saved_manifest.get('training_protocol') != 'original_rl_v1':
         raise ValueError('Checkpoint training protocol predates original RL normalization/sampling; start a new run')
     if saved_manifest["subjects"] != manifest["subjects"]:
