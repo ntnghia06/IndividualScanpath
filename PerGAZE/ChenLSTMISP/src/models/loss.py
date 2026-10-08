@@ -4,8 +4,9 @@ import torch.nn.functional as F
 
 
 def supervised_loss(prediction, batch, duration_weight=1.0):
-    action = -(batch["target_scanpaths"] * F.log_softmax(prediction["actions"], -1)).sum(-1)
-    action = (action * batch["action_masks"]).sum() / batch["action_masks"].sum()
+    probabilities = F.softmax(prediction["actions"], dim=-1)
+    action = -(batch["target_scanpaths"] * torch.log(probabilities + 1e-7)
+               * batch["action_masks"].unsqueeze(-1)).sum() / batch["action_masks"].sum()
     duration = -duration_log_prob(batch["durations"], prediction)
     duration = duration[batch["duration_masks"] == 1].sum() / batch["duration_masks"].sum()
     return action + duration_weight * duration, action, duration

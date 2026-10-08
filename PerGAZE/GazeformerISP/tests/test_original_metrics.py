@@ -23,12 +23,15 @@ class OriginalMetricsTest(unittest.TestCase):
         first, second = compare.call_args.args
         self.assertEqual(len(first), 3); self.assertEqual(len(second), 3)
         self.assertEqual(tuple(first[1]), (1., 1., .001))
-        self.assertIsNone(result["MultiMatch_direction"])
+        for name in ("vector", "direction", "length", "position", "duration"):
+            self.assertIsNone(result["MultiMatch_" + name])
         rows = [{"condition": "present", "subject_key": "tp:7", "metrics": result}]
         report = summarize(rows)
         self.assertEqual(report["overall"]["multimatch_padding"]["pairs"], 1)
         self.assertEqual(report["overall"]["multimatch_padding"]["targets"], 1)
         self.assertEqual(report["overall"]["multimatch_padding"]["predictions"], 1)
+        for name in ("vector", "direction", "length", "position", "duration"):
+            self.assertEqual(report["overall"]["metrics"]["MultiMatch_" + name]["valid_count"], 0)
         json.dumps(report, allow_nan=False)
 
     def test_retrieval_groups_conditions_and_questions_independently(self):
@@ -100,3 +103,27 @@ class OriginalMetricsTest(unittest.TestCase):
         _, _, times, *_ = sample_scanpaths(prediction, greedy=True)
         self.assertEqual(times.item(), 0.)
         self.assertTrue(torch.isfinite(duration_log_prob(times, prediction)).all())
+
+    def test_retrieval_does_not_discard_scanmatch_when_multimatch_is_nan(self):
+        path = np.array([[10., 20., .2], [40., 60., .3], [100., 120., .4]])
+        metrics = Metrics()
+        with patch.object(metrics, "multimatch", side_effect=AssertionError("Retrieval must not depend on MM")):
+            self.assertEqual(metrics.retrieval_score(path, path), 1.)
+        # Reward rejection remains separate from the eval retrieval behavior.
+        with patch.object(metrics, "multimatch", return_value=np.full(5, np.nan)):
+            self.assertTrue(np.isnan(metrics.reward(path, path)))
+
+    def test_supervised_action_loss_matches_original_at_tiny_probabilities(self):
+        logits = torch.tensor([[[0., -80.], [2., -3.]]], requires_grad=True)
+        target = torch.tensor([[[0., 1.], [1., 0.]]])
+        mask = torch.tensor([[1., 0.]])
+        prediction = {"actions": logits, "log_normal_mu": torch.zeros(1, 2),
+                      "log_normal_sigma2": torch.ones(1, 2)}
+        batch = {"target_scanpaths": target, "action_masks": mask,
+                 "durations": torch.full((1, 2), .2), "duration_masks": torch.ones(1, 2)}
+        expected = -(target * torch.log(torch.softmax(logits, -1) + 1e-7) * mask[..., None]).sum() / mask.sum()
+        _, actual, _ = supervised_loss(prediction, batch)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        torch.testing.assert_close(torch.autograd.grad(actual, logits, retain_graph=True)[0],
+                                   torch.autograd.grad(expected, logits)[0], rtol=0, atol=0)
+        self.assertLess(actual.item(), 17.)  # log_softmax would produce 80 here.

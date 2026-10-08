@@ -78,7 +78,7 @@ def main():
     tests = read_records(args.test_file)
     chosen, selection = select_support(support_pool, args.k, args.seed)
     manifest = build_manifest(saved_base_manifest, chosen, tests)
-    manifest["metric_protocol"] = "original_mm_retrieval_duration_v1"
+    manifest["metric_protocol"] = "original_mm_retrieval_duration_v2"
     if set(old_subjects) & set(manifest["adaptation_subjects"]):
         raise ValueError("Expected unseen support subjects; a support observer already exists in the base model")
     provenance = {"base_checkpoint": checkpoint_hash, "support": sha256(args.support_file),
@@ -130,7 +130,7 @@ def main():
     start, best = 0, -float("inf")
     if args.resume:
         state = load_checkpoint(last_path, device)
-        if state["manifest"].get("metric_protocol") != "original_mm_retrieval_duration_v1":
+        if state["manifest"].get("metric_protocol") != "original_mm_retrieval_duration_v2":
             raise ValueError("Adaptation eval protocol changed; start a new run")
         if state["manifest"].get("adaptation_sampling_protocol") != "original_sigma2_v1":
             raise ValueError("Old adaptation sampling protocol; start a new run")

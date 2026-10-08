@@ -5,7 +5,7 @@ from utils.evaltools.scanmatch import ScanMatch
 from utils.evaltools.visual_attention_metrics import string_edit_distance, scaled_time_delay_embedding_similarity
 SCREEN = (240, 320)
 
-METRIC_PROTOCOL = "original_mm_retrieval_duration_v1"
+METRIC_PROTOCOL = "original_mm_retrieval_duration_v2"
 
 
 def padded_scanpath(path):
@@ -53,8 +53,7 @@ class Metrics:
         return 2 * a * b / (a + b) if a + b else 0.
 
     def retrieval_score(self, target, prediction):
-        if not np.isfinite(self.multimatch(target, prediction)).all():
-            return float("nan")
+        # Original evaluator computes ScanMatch independently of MultiMatch NaN.
         return self.scanmatch(target, prediction)[1]
 
     def pair(self, target, prediction):
@@ -68,7 +67,7 @@ class Metrics:
             "MultiMatch_padded_prediction": float(len(prediction) < 3),
             "MultiMatch_padded_pair": float(min(len(target), len(prediction)) < 3),
             "MultiMatch_invalid_pair": float(not np.isfinite(scores).all())}
-        result.update({"MultiMatch_" + name: float(value) if np.isfinite(value) else None
+        result.update({"MultiMatch_" + name: float(value) if np.isfinite(scores).all() else None
                        for name, value in zip(("vector", "direction", "length", "position", "duration"), scores)})
         return {key: value if value is None or np.isfinite(value) else None for key, value in result.items()}
 

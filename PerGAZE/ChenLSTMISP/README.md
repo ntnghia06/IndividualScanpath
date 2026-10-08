@@ -198,3 +198,13 @@ Earlier checkpoint weights can be evaluated with this metric protocol when
 architecture-compatible. Start a new run instead of resuming old best-score,
 optimizer or RL state across the protocol change. Cached image features and
 sentence vectors do not need regeneration for this revision.
+
+
+## Metric protocol v2 and original supervised action loss
+
+Supervised action loss now uses log(softmax(logits)+1e-7) with the original mask
+and normalization. An invalid MultiMatch component excludes all five MM values
+for that pair; all five valid_count fields therefore use the same comparisons.
+Retrieval computes temporal ScanMatch regardless of MM validity. RL still rejects
+invalid MultiMatch reward trials, matching original pairs_eval. Old weights can
+be re-evaluated; start a new training run rather than mixing loss/metric protocols.

@@ -42,7 +42,7 @@ def setup(args):
     manifest['object_to_head'] = OBJECT_TO_INDEX.copy()
     manifest['vqa_head'] = -1
     manifest['training_protocol'] = 'original_rl_v1'
-    manifest['metric_protocol'] = 'original_mm_retrieval_duration_v1'
+    manifest['metric_protocol'] = 'original_mm_retrieval_duration_v2'
     manifest['sources'] = {
         'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
         'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
@@ -91,7 +91,7 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
-    if getattr(args, 'resume', False) and saved_manifest.get('metric_protocol') != 'original_mm_retrieval_duration_v1':
+    if getattr(args, 'resume', False) and saved_manifest.get('metric_protocol') != 'original_mm_retrieval_duration_v2':
         raise ValueError('Resume metrics/duration protocol changed; use a new run (existing weights can still be evaluated)')
     if (saved_manifest.get('task_head_schema') != HEAD_SCHEMA
             or saved_manifest.get('object_to_head') != OBJECT_TO_INDEX):

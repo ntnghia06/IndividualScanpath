@@ -36,7 +36,7 @@ def setup(args):
     records = train_records + validation_records
     manifest = make_file_manifest(train_records, validation_records)
     manifest['training_protocol'] = 'original_rl_v1'
-    manifest['metric_protocol'] = 'original_mm_retrieval_duration_v1'
+    manifest['metric_protocol'] = 'original_mm_retrieval_duration_v2'
     manifest['sources'] = {
         'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
         'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
@@ -102,7 +102,7 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
-    if getattr(args, 'resume', False) and saved_manifest.get('metric_protocol') != 'original_mm_retrieval_duration_v1':
+    if getattr(args, 'resume', False) and saved_manifest.get('metric_protocol') != 'original_mm_retrieval_duration_v2':
         raise ValueError('Resume metrics/duration protocol changed; use a new run (existing weights can still be evaluated)')
     if saved_manifest.get('training_protocol') != 'original_rl_v1':
         raise ValueError('Checkpoint training protocol predates original RL normalization/sampling; start a new run')
