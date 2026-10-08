@@ -1,104 +1,51 @@
 # PerGAZE GazeformerISP-S: k-shot subject embedding finetuning
 
-Load a trained PerGAZE GazeformerISP checkpoint, sample exactly **k scanpaths
-per support observer**, finetune only their subject embedding rows for **3
-epochs**, and evaluate `test_unseen.json` after each epoch. Save the adapted
-checkpoint with the highest harmonic mean of the two ScanMatch metrics.
+Requires a newly trained cached-v3 GazeformerISP base checkpoint: sentence
+embeddings, 769 actions and separate TA/TP identities. Earlier online-backbone,
+705-action or pooled-observer checkpoints are incompatible.
 
-The branch reuses the sibling `GazeformerISP/src` loader/model/metrics and needs
-the full repository. Model dimensions, max_length, vocabulary, geometry and
-text backend are restored from the base checkpoint. No pretrained weight
-download is necessary: all model weights are loaded from that checkpoint.
+Select exactly k support scanpaths per (condition, observer) using seed 10 by
+default, then finetune only new subject embedding rows for 3 supervised epochs.
+The nine unseen identities are ta:7/8/9, tp:7/8/9, air:JY/SC/YN. k=5 selects
+45 samples. TA user 7 and TP user 7 are different people. New rows initialize
+from the mean of the corresponding seen population, or seeded random with
+--init random. All other weights and old subject rows remain frozen.
 
-Current support data has nine unseen identities: `air:JY`, `air:SC`, `air:YN`,
-`ta:7`, `ta:8`, `ta:9`, `tp:7`, `tp:8`, `tp:9`. TA user 7 and TP user 7
-are different people: support sampling, embedding rows and evaluation groups
-are separate. With k=5, this selects 45 support scanpaths.
-The supplied legacy base checkpoint has 23 seen embedding rows and pooled
-TA/TP as `coco:*`. Those pretrained rows remain frozen. New TA/TP rows default
-to their own population mean if present, otherwise the legacy COCO mean;
-VQA rows use the AIR mean. Identical initialization does not share parameters.
-`--init random` enables seeded random initialization instead.
+## Inputs
 
-All existing model parameters, old embedding rows, BatchNorm buffers and
-dropout behavior are frozen. The model stays in eval mode while autograd
-computes support loss through the frozen network to the new embedding rows.
-Loss is the original supervised action loss plus duration loss. Adam updates
-only the subject-embedding parameter with masked gradients, zero weight decay
-and a fresh optimizer state. There is no RL adaptation stage.
+- --checkpoint: best.pth or checkpoint.pth from the new v3 base training.
+- --support_file / --test_file: support.json / test_unseen.json.
+- --feature_dir: frozen COCO image feature .pth files, same cache format as base.
+- --text_embeddings: exact gazeformer_task_embeddings.npz used by base training,
+  including support/unseen questions and TA instructions. SHA-256 must match.
+- --img_dir: original image tree for resolving portable feature cache keys.
 
-## Run locally from D:\PerScan
+The base notebook precomputes both encoders for all four splits. The few-shot
+notebook can reuse an imported image cache or extract support/unseen features
+before finetuning. It discovers the imported original NPZ, or accepts an explicit
+TEXT_EMBEDDINGS path. Do not regenerate a different archive for adaptation.
+
+## Run from D:/PerScan
 
 ```powershell
-conda activate cs117
-python src/IndividualScanpath/PerGAZE/GazeformerISP-S/src/train.py --k 5
+python src/IndividualScanpath/PerGAZE/GazeformerISP-S/src/train.py --checkpoint PATH_TO_V3_BEST --k 5 --feature_dir PATH_TO_CACHE --text_embeddings PATH_TO_ORIGINAL_NPZ
 ```
 
-Default base checkpoint:
-`src/IndividualScanpath/pergaze_gazeformer_run/checkpoints/best.pth`.
-Pass `--checkpoint` to use another base checkpoint (best.pth or checkpoint.pth).
-Default data files are `dataset/PerGAZED/dataset/support.json` and
-`test_unseen.json`; image/map directories match the base training pipeline.
+Default k=5, seed=10, epoch=3, lr=1e-3, batch=2, test_batch=4. Supports
+DataParallel with --gpu_ids 0 1. Sampling is reproducible under record reordering.
+Support and test overlap is rejected. Evaluation uses the same RNG seed per epoch.
+The model stays in eval mode during finetuning; only masked new embedding rows
+receive gradients. Adam uses no weight decay and a fresh optimizer state.
 
-`--k` is a hyperparameter, default 5. Default seed is 10, epochs 3, embedding
-learning rate 1e-3, train batch 2 and evaluation batch 4. Record IDs are sorted
-and each observer has a deterministic seeded sampler. Exactly k samples must
-be available for every support observer; duplicates and overlap between selected
-support and test are rejected. Sampling is separate for each (condition, subject),
-across that observer's tasks without imposing task quotas. The test set never provides
-gradient updates. Its observers must have selected support examples.
+## Outputs and resume
 
-Supports CPU, one GPU, or DataParallel via `--gpu_ids 0 1`. Default CUDA mode
-uses all visible GPUs. Evaluation sampling uses the same eval seed after every
-epoch, isolated from the training RNG. `--greedy` makes decoding deterministic.
+Default runs/k5_seed10_by_condition/ contains checkpoints/checkpoint.pth,
+checkpoints/best.pth and report.json. The report records input/config provenance,
+selected support IDs, baseline, epoch losses/metrics and the best adapted epoch.
+Best score is the harmonic mean of the two ScanMatch means on test_unseen.
+This requested selection uses test_unseen itself, not an untouched test estimate.
 
-## Outputs
-
-Default: `GazeformerISP-S/runs/k5_seed10_by_condition/`.
-Adaptation checkpoints from the previous pooled TA/TP implementation cannot
-be resumed or evaluated with this protocol; start a new adaptation run.
-
-- `checkpoints/checkpoint.pth`: last adapted model, optimizer and RNG for resume.
-- `checkpoints/best.pth`: highest-scoring adapted epoch (among epochs 1-3).
-- **`report.json`**: one report containing config, base config, input hashes,
-  selected support IDs per user, initialization baseline, all epoch losses and
-  metrics, best epoch, best metrics and best predicted scanpaths. Metrics include
-  overall, per-condition and per-subject statistics from the base evaluator.
-
-The requested best-epoch selection uses **test_unseen** itself. Reported best
-performance therefore includes test-based model selection; it is not an
-untouched held-out test estimate. The initialization baseline is reported for
-comparison, but best.pth is selected only among adapted epochs.
-
-## Kaggle
-
-Import `kaggle_gazeformer_s.ipynb`, enable Internet and GPU T4 x2, attach:
-
-1. The PerGAZE dataset with support.json/test_unseen.json/images/attention_reasoning.
-2. Output of the base Gazeformer run with checkpoints/best.pth.
-
-Set K and SEED in the notebook. Choose the correct checkpoint if multiple runs
-are attached. Optional pretrained text mode requires the **same NPZ contents**
-used by the base run; pass `--text_embeddings` with its relocated path. It must
-also cover all support/test tasks. Learned-text base checkpoints need no NPZ.
-
-## Resume and functional checks
-
-```powershell
-python src/IndividualScanpath/PerGAZE/GazeformerISP-S/src/train.py --k 5 --resume
-python -m unittest discover -s src/IndividualScanpath/PerGAZE/GazeformerISP-S/tests
-```
-
-Resume requires the same base checkpoint bytes, selected support records, k,
-seed, input files and training settings. Restore the entire adapted run directory,
-including report.json and both checkpoint files. GPU count may change. Like the
-base trainer, interrupted epochs resume from the last completed epoch.
-
-`--max_batches` / `--eval_max_batches` are optional functional-test limits;
-leave both zero to train all k samples per observer and evaluate all unseen
-samples. Full model training settings and geometry are inherited from the base
-checkpoint; changing them is not part of subject-only adaptation.
-
-To re-evaluate the saved adapted best checkpoint, run `src/test.py --k 5`
-with the same image/map/test paths. It appends a reevaluation section to the
-same report.json. Use --checkpoint to select another adapted checkpoint.
+Import the whole run directory into Kaggle, restore it to RUN, retain original
+NPZ and image cache (or re-extract images), then add --resume with identical k,
+seed and input files. src/test.py re-evaluates adapted best.pth and appends to
+report.json. Old pooled-TA/TP adaptation runs must not be resumed.

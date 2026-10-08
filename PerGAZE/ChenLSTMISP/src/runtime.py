@@ -82,6 +82,8 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
+    if saved_manifest["subjects"] != manifest["subjects"]:
+        raise ValueError("Checkpoint subject identities differ (legacy TA/TP pooling); retrain")
     if saved_manifest.get('split_mode') != 'explicit_files':
         raise ValueError('Checkpoint uses the previous automatic split; start a new run for train.json/test_seen.json')
     for split in ('train', 'validation'):

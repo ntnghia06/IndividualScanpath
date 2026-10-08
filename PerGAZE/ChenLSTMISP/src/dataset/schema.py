@@ -28,8 +28,8 @@ def read_records(path):
 
 
 def subject_key(row):
-    # COCO TP and TA share observers; AiR observers form a separate population.
-    return ("air:" if row["condition"] == "vqa" else "coco:") + str(row["subject"])
+    # Observer numbers are independent in TP, TA and VQA.
+    return {"present": "tp:", "absent": "ta:", "vqa": "air:"}[row["condition"]] + str(row["subject"])
 
 
 def image_key(row):

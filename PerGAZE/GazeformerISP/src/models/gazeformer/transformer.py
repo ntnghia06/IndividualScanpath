@@ -186,17 +186,10 @@ class Transformer(nn.Module):
     def forward(self, src: Tensor, tgt: Tensor, subjects:Tensor, task:Tensor, src_mask: Optional[Tensor] = None, tgt_mask: Optional[Tensor] = None,
                 memory_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None,
                 tgt_key_padding_mask: Optional[Tensor] = None, memory_key_padding_mask: Optional[Tensor] = None,
-                querypos_embed: Optional[Tensor] = None, patchpos_embed: Optional[Tensor] = None,
-                guidance=None, task_mask=None):
+                querypos_embed: Optional[Tensor] = None, patchpos_embed: Optional[Tensor] = None):
         memory, visual_att = self.encoder(src, mask=src_mask, subjects = subjects, task = task, src_key_padding_mask=src_key_padding_mask, patchpos_embed=patchpos_embed)
 
 
-        if task_mask is not None:
-            visual_att = visual_att * task_mask[:, None]
-        if guidance is not None:
-            total = guidance.sum(-1, keepdim=True)
-            prior = guidance / total.clamp_min(1e-8)
-            visual_att = torch.where(total > 0, .5 * (visual_att + prior), visual_att)
         subject_att = self.subject_attention_module(memory, subjects).permute(1, 0)
         memory = self.integration_module(features=memory, visual_att=visual_att, subject_att=subject_att, subjects=subjects)
 

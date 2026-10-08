@@ -12,6 +12,7 @@ def parse_args(evaluation=False):
     parser.add_argument("--img_dir", type=Path, default=DATASET / "images")
     parser.add_argument("--att_dir", type=Path, default=DATASET / "attention_reasoning")
     parser.add_argument("--text_embeddings", type=Path)
+    parser.add_argument("--feature_dir", type=Path, default=DATASET / "gazeformer_image_features")
     parser.add_argument("--k", type=int, default=5, help="Exactly k support scanpaths per observer")
     parser.add_argument("--seed", type=int, default=10)
     parser.add_argument("--eval_seed", type=int, help="Defaults to seed; same evaluation draws after each epoch")

@@ -135,3 +135,12 @@ Training schedule: displayed epochs 1-5 are supervised (SFT), epochs 6-10
 are RL. One-epoch warmup is part of SFT. Both models validate after each epoch
 and save supervised.pth after epoch 5. Existing checkpoints keep their saved
 schedule on resume; start a new run directory for the new 5+5 schedule.
+
+
+## Current backbone and guidance
+
+ChenLSTM keeps the original trainable ImageNet dilated ResNet50 (no COCO cache).
+TP builds guidance from PerGAZE xywh bbox; VQA reads qid.npy, resized to 30x40
+and normalized; TA has zero guidance. TP/TA subjects now use separate tp:/ta:
+identities. Checkpoints with pooled coco: observers require a new training run.
+Gazeformer cached-v3 geometry changes do not alter ChenLSTM 320x240/30x40.

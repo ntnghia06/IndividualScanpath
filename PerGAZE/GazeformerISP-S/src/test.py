@@ -60,7 +60,7 @@ def main():
     manifest["record_splits"] = ["validation"] * len(tests)
     data = SubjectAdaptationDataset(tests, manifest, args.img_dir, args.att_dir, split="validation",
         max_length=config["max_length"], blur_sigma=config["blur_sigma"],
-        max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
+        max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings, feature_dir=args.feature_dir)
     summary, predictions = evaluate_seeded(network, loader(args, data, evaluation=True), args, device,
                                           "Adapted checkpoint evaluation on unseen")
     report["reevaluation"] = {"checkpoint": str(args.checkpoint), "score": score(summary),

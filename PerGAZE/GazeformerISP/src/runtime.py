@@ -42,9 +42,15 @@ def setup(args):
     manifest['geometry'] = GEOMETRY.copy()
     from dataset.text import add_text_manifest
     add_text_manifest(records, manifest)
+    if args.text_embeddings is None:
+        raise ValueError('Precompute sentence embeddings before training')
+    if args.train_backbone or args.backbone_weights != 'coco':
+        raise ValueError('Gazeformer uses precomputed frozen COCO features')
     if args.text_embeddings:
         with np.load(args.text_embeddings, allow_pickle=False) as archive:
             args.text_dim = archive['vectors'].shape[1]
+            if args.text_dim != 768:
+                raise ValueError('Expected 768-dimensional SentenceTransformer embeddings')
         manifest['text_embeddings_sha256'] = hashlib.sha256(args.text_embeddings.read_bytes()).hexdigest()
     return (records, manifest, device)
 
@@ -52,7 +58,7 @@ def dataset(args, records, manifest, split):
     cls, extra = (PerGAZE, {})
     from dataset.text import GazeformerPerGAZE
     cls = GazeformerPerGAZE
-    extra = {'text_embeddings': args.text_embeddings, 'max_text_length': args.max_text_length}
+    extra = {'text_embeddings': args.text_embeddings, 'max_text_length': args.max_text_length, 'feature_dir': args.feature_dir}
     return cls(records, manifest, args.img_dir, args.att_dir, split=split, max_length=args.max_length, blur_sigma=args.blur_sigma, **extra)
 
 def loader(args, data, shuffle=False, evaluation=False):
@@ -93,6 +99,10 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
+    if saved_manifest.get("geometry") != GEOMETRY:
+        raise ValueError("Checkpoint geometry is obsolete; retrain with the 24x32 action grid")
+    if saved_manifest["subjects"] != manifest["subjects"]:
+        raise ValueError("Checkpoint subject identities differ (legacy TA/TP pooling); retrain")
     if saved_manifest.get('geometry') != GEOMETRY:
         raise ValueError('Checkpoint uses a different image/scanpath geometry; retrain with the 1024x768 image and 512x352 scanpath configuration')
     if saved_manifest.get('split_mode') != 'explicit_files':

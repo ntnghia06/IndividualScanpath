@@ -46,7 +46,7 @@ class PerGAZETest(unittest.TestCase):
         manifest = make_manifest(self.records)
         self.assertEqual(manifest, make_manifest(list(reversed(self.records))))
         self.assertEqual(image_key(self.records[0]), image_key(self.records[1]))
-        self.assertEqual(subject_key(self.records[0]), subject_key(self.records[1]))
+        self.assertNotEqual(subject_key(self.records[0]), subject_key(self.records[1]))
         self.assertNotEqual(subject_key(self.records[0]), subject_key(self.records[2]))
 
     def test_original_pixels_duration_stop_and_clipping(self):
@@ -62,7 +62,7 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual(row["duration_masks"].tolist(), [1, 1, 0, 0])
 
     def test_explicit_files_keep_same_image_in_requested_splits(self):
-        train_rows = [self.records[0], self.records[2]]
+        train_rows = [self.records[0], self.records[1], self.records[2]]
         val_rows = [self.records[1]]
         manifest = make_file_manifest(train_rows, val_rows)
         rows = train_rows + val_rows
@@ -71,7 +71,7 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual([r for _, r in train.records], train_rows)
         self.assertEqual([r for _, r in val.records], val_rows)
         self.assertEqual(split_counts(rows, manifest)["validation"], {"absent": 1})
-        self.assertEqual(manifest["record_splits"], ["train", "train", "validation"])
+        self.assertEqual(manifest["record_splits"], ["train", "train", "train", "validation"])
 
     def test_validation_observers_must_be_seen_in_train(self):
         with self.assertRaisesRegex(ValueError, "observers"):

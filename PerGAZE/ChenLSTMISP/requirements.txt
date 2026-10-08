@@ -4,3 +4,5 @@ Pillow>=9.1
 scipy>=1.10
 tqdm>=4.65
 # Optional evaluation: multimatch-gaze
+
+scikit-image>=0.20

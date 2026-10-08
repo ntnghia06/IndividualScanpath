@@ -108,7 +108,7 @@ def main():
     def make_data(split):
         return SubjectAdaptationDataset(records, manifest, args.img_dir, args.att_dir, split=split,
             max_length=config["max_length"], blur_sigma=config["blur_sigma"],
-            max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
+            max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings, feature_dir=args.feature_dir)
     train_loader = loader(args, make_data("train"), shuffle=True)
     test_loader = loader(args, make_data("validation"), evaluation=True)
     resolved = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}

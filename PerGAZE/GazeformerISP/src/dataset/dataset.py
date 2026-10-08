@@ -60,14 +60,21 @@ class PerGAZE(Dataset):
     def observer_key(self, row):
         return subject_key(row)
 
-    def __getitem__(self, index):
-        record_index, row = self.records[index]
+    def load_visual(self, row):
         with Image.open(image_path(self.image_dir, row)) as source:
             width, height = source.size
             image = np.asarray(source.convert("RGB").resize(
                 (self.image_resize[1], self.image_resize[0]), Image.Resampling.BILINEAR), dtype=np.float32) / 255
         image = torch.from_numpy(image.copy()).permute(2, 0, 1)
         image = (image - torch.tensor([.485, .456, .406])[:, None, None]) / torch.tensor([.229, .224, .225])[:, None, None]
+        return image, width, height
+
+    def guidance(self, row, width, height):
+        return torch.from_numpy(load_guidance(row, self.attention_dir, (width, height)))
+
+    def __getitem__(self, index):
+        record_index, row = self.records[index]
+        image, width, height = self.load_visual(row)
         coords = np.asarray([row["X"], row["Y"], row["T"]], dtype=np.float32).T
         if not np.isfinite(coords).all() or (coords[:, 2] <= 0).any():
             raise ValueError(f"Record {record_index}: coordinates/durations must be finite; T > 0")
@@ -92,7 +99,7 @@ class PerGAZE(Dataset):
             targets[count:, 0] = 1
             action_mask[count] = 1  # supervise exactly one stop action
         return {"images": image, "subjects": torch.tensor(self.manifest["subjects"][self.observer_key(row)]),
-                "attention_maps": torch.from_numpy(load_guidance(row, self.attention_dir, (width, height))),
+                "attention_maps": self.guidance(row, width, height),
                 "target_scanpaths": torch.from_numpy(targets), "durations": torch.from_numpy(durations),
                 "action_masks": torch.from_numpy(action_mask), "duration_masks": torch.from_numpy(duration_mask),
                 "fix_vectors": coords, "metadata": {"record_index": record_index, "name": row["name"],

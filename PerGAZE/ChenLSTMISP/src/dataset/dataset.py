@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+from skimage.transform import resize as resize_map
 from PIL import Image
 from scipy.ndimage import gaussian_filter
 from torch.utils.data import Dataset
@@ -20,8 +20,6 @@ def load_guidance(row, attention_dir, image_size, map_size=(30, 40)):
         raw = np.squeeze(raw).astype(np.float32)
         if raw.ndim != 2 or not np.isfinite(raw).all() or raw.min() < 0:
             raise ValueError(f"Invalid attention map for {row['qid']}: shape={raw.shape}")
-        raw = F.interpolate(torch.from_numpy(raw.copy())[None, None], size=map_size,
-                            mode="bilinear", align_corners=False)[0, 0].numpy()
     else:
         boxes = np.asarray(row["bbox"], dtype=np.float32).reshape(-1, 4)
         if not np.isfinite(boxes).all() or (boxes[:, 2:] <= 0).any():
@@ -33,9 +31,7 @@ def load_guidance(row, attention_dir, image_size, map_size=(30, 40)):
             if x1 <= x0 or y1 <= y0:
                 raise ValueError(f"BBox outside image: {row['name']}")
             raw[y0:y1, x0:x1] = 1
-        # Area interpolation preserves small target boxes when reducing resolution.
-        raw = F.interpolate(torch.from_numpy(raw)[None, None], size=map_size,
-                            mode="area")[0, 0].numpy()
+    raw = resize_map(raw, map_size).astype(np.float32)
     maximum = float(raw.max())
     if maximum:
         raw /= maximum

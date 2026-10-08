@@ -146,7 +146,7 @@ def main():
                     network.train()
                     loss, _, _ = supervised_loss(forward(network, batch), batch, args.lambda_1)
                 if not torch.isfinite(loss):
-                    raise ValueError(f"Nonfinite loss at epoch {epoch}, batch {i}")
+                    raise ValueError(f"Nonfinite loss at epoch {epoch}, batch {progress.n}")
                 loss.backward()
                 if args.clip > 0:
                     torch.nn.utils.clip_grad_norm_(network.parameters(), args.clip, error_if_nonfinite=True)
