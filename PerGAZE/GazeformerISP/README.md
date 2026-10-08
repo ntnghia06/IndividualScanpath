@@ -65,17 +65,17 @@ python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --smoke_test --max_length 3 --rl_sample_number 2 --batch 1 --log_root src/IndividualScanpath/PerGAZE/GazeformerISP/runs/smoke
 
 # Resume the default run or evaluate all records
-python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --resume --epoch 40
+python src/IndividualScanpath/PerGAZE/GazeformerISP/src/train.py --resume --epoch 10
 python src/IndividualScanpath/PerGAZE/GazeformerISP/src/test.py --split validation
 
 python -m unittest discover -s src/IndividualScanpath/PerGAZE/GazeformerISP/tests
 ```
 
-Training defaults directly match the original AiR `opts.py` plus its
-`bash/train.sh` overrides. No configuration selector is needed:
-40 epochs, start RL at index 25, train batch 1, max/min
+Training uses AiR run hyperparameters with the requested 5 supervised + 5 RL
+epoch schedule. No configuration selector is needed:
+10 epochs, start RL at index 5, train batch 1, max/min
 fixations 16/1, seed 10, clipping disabled, head dropout 0.4 and validation
-starting at epoch index 6.
+after every epoch.
 Both models use one-epoch warmup and linear supervised/RL learning-rate decay,
 LR 1e-4, RL multiplier 0.1, weight decay 5e-5, validation batch 1 and five RL
 samples with a mean reward baseline. Target blur is disabled. Data files and
@@ -130,8 +130,8 @@ created. Checkpoints from the former 80/10/10 split require a new training run.
 
 ## Training and resume settings
 
-Run `python src/train.py` with your data paths; all defaults already match the
-original AiR run script. `epoch > no_eval_epoch` enables validation.
+Run `python src/train.py` with your data paths; the default schedule is 5 supervised epochs
+followed by 5 RL epochs, with validation after every epoch. `epoch > no_eval_epoch` enables validation.
 `checkpoint.pth` is saved at every epoch even if validation is deferred;
 `best.pth` is saved when validation improves. `supervised.pth` is saved
 immediately before RL. Reports include learning rate and validation score.
@@ -159,3 +159,8 @@ Portable checkpoints can be loaded on one or two GPUs. Resume keeps the saved
 batch size and training settings. Optional semantic text embeddings are written
 to `/kaggle/working/gazeformer_task_embeddings.npz` and must be retained when used.
 The default remains learned word embeddings and requires no extra text model.
+
+Training schedule: displayed epochs 1-5 are supervised (SFT), epochs 6-10
+are RL. One-epoch warmup is part of SFT. Both models validate after each epoch
+and save supervised.pth after epoch 5. Existing checkpoints keep their saved
+schedule on resume; start a new run directory for the new 5+5 schedule.

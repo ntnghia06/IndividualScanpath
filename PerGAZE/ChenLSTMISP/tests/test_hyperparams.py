@@ -15,7 +15,7 @@ from schedule import learning_rate_factor
 
 
 class HyperparameterTest(unittest.TestCase):
-    def test_defaults_match_original_air_opts_and_run_script(self):
+    def test_defaults_keep_air_hyperparameters_with_requested_schedule(self):
         model_root = Path(__file__).resolve().parents[1]
         source = model_root.parents[1] / "AiR" / model_root.name
         original = {}
@@ -30,12 +30,26 @@ class HyperparameterTest(unittest.TestCase):
         if model_root.name == "GazeformerISP":
             original["dropout"] = original["cls_dropout"]
             original["embedding_dim"] = original["subject_feature_dim"]
+        original.update(epoch=10, start_rl_epoch=5, no_eval_epoch=-1)
         with patch.object(sys, "argv", ["train.py"]):
             args = parse_opt()
         for key in set(TRAINING_KEYS) | {"epoch"}:
             if key in original:
                 self.assertEqual(getattr(args, key), original[key], key)
         self.assertFalse(hasattr(args, "hyperparam_preset"))
+
+    def test_five_supervised_and_five_rl_epochs(self):
+        with patch.object(sys, "argv", ["train.py"]):
+            args = parse_opt()
+        self.assertEqual(args.epoch, 10)
+        self.assertEqual([i for i in range(args.epoch) if i < args.start_rl_epoch], list(range(5)))
+        self.assertEqual([i for i in range(args.epoch) if i >= args.start_rl_epoch], list(range(5, 10)))
+        self.assertEqual(args.warmup_epoch, 1)
+        self.assertEqual(args.no_eval_epoch, -1)
+        self.assertEqual(learning_rate_factor(10, args, 10), 1.)
+        self.assertEqual(learning_rate_factor(50, args, 10), 0.)
+        self.assertAlmostEqual(learning_rate_factor(75, args, 10), .05)
+        self.assertEqual(learning_rate_factor(100, args, 10), 0.)
 
     def test_cli_can_override_direct_defaults(self):
         with patch.object(sys, "argv", ["train.py", "--batch", "4", "--epoch", "45"]):
