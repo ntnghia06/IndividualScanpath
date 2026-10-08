@@ -7,7 +7,13 @@ import random
 import torch
 from torch import nn
 
-from dataset.schema import subject_key
+IDENTITY_SCHEME = "condition_separated_v1"
+
+
+def subject_key(row):
+    """TA and TP observer numbers belong to independent populations."""
+    prefixes = {"absent": "ta", "present": "tp", "vqa": "air"}
+    return f"{prefixes[row['condition']]}:{row['subject']}"
 
 
 def record_identity(row):
@@ -54,7 +60,8 @@ def build_manifest(base_manifest, chosen, tests):
         subjects[key] = len(subjects)
     manifest.update(version=3, split_mode="explicit_files",
                     record_splits=["train"] * len(chosen) + ["validation"] * len(tests),
-                    adaptation_subjects=sorted(support_users))
+                    adaptation_subjects=sorted(support_users),
+                    subject_identity_scheme=IDENTITY_SCHEME)
     return manifest
 
 
@@ -69,7 +76,13 @@ def expand_subject_embeddings(network, old_subjects, subjects, initialization="m
             if key in old_subjects:
                 continue
             if initialization == "mean":
-                source_indices = [i for user, i in old_subjects.items() if user.split(":", 1)[0] == key.split(":", 1)[0]]
+                prefix = key.split(":", 1)[0]
+                source_indices = [i for user, i in old_subjects.items()
+                                  if user.split(":", 1)[0] == prefix]
+                # Legacy pretrained checkpoints combined TA/TP as coco:*.
+                if not source_indices and prefix in ("ta", "tp"):
+                    source_indices = [i for user, i in old_subjects.items()
+                                      if user.split(":", 1)[0] == "coco"]
                 if not source_indices:
                     source_indices = list(old_subjects.values())
                 replacement.weight[index].copy_(old_weight[source_indices].mean(0))

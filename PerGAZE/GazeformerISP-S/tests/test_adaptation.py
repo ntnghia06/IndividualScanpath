@@ -1,5 +1,6 @@
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -8,6 +9,9 @@ import bootstrap
 import torch
 from torch import nn
 from adaptation import select_support, build_manifest, expand_subject_embeddings, freeze_for_adaptation
+from adaptation_dataset import SubjectAdaptationDataset
+from PIL import Image
+import numpy as np
 
 
 def row(subject, index, condition="vqa"):
@@ -16,6 +20,34 @@ def row(subject, index, condition="vqa"):
 
 
 class AdaptationTest(unittest.TestCase):
+    def test_same_number_in_ta_tp_vqa_has_independent_support_and_embeddings(self):
+        rows = [row(7, i, condition) for condition in ("absent", "present", "vqa") for i in range(10)]
+        chosen, selection = select_support(rows, 3, 10)
+        self.assertEqual(set(selection), {"ta:7", "tp:7", "air:7"})
+        self.assertEqual(len(chosen), 9)
+        self.assertTrue(all(v["selected_count"] == 3 for v in selection.values()))
+        base = {"subjects": {"coco:1": 0, "air:OLD": 1}, "text_vocabulary": {}}
+        tests = [row(7, 20, condition) for condition in ("absent", "present", "vqa")]
+        manifest = build_manifest(base, chosen, tests)
+        self.assertEqual(len({manifest["subjects"][key] for key in selection}), 3)
+        network = nn.Module()
+        network.subject_embed = nn.Embedding(2, 2)
+        with torch.no_grad():
+            network.subject_embed.weight.copy_(torch.tensor([[1., 2.], [10., 20.]]))
+        expand_subject_embeddings(network, base["subjects"], manifest["subjects"])
+        for key in ("ta:7", "tp:7"):
+            torch.testing.assert_close(network.subject_embed.weight[manifest["subjects"][key]], torch.tensor([1., 2.]))
+        # Exercise the inherited image loader, tensor index and evaluation metadata.
+        data = SubjectAdaptationDataset(tests, {**manifest, "record_splits": ["validation"] * 3},
+                                        "images", "attention", split="validation", image_resize=(8, 8))
+        with patch("dataset.dataset.image_path", return_value="mock.jpg"), \
+             patch("dataset.dataset.Image.open", side_effect=lambda _: Image.new("RGB", (10, 10))), \
+             patch("dataset.dataset.load_guidance", return_value=np.zeros((1, 22, 32), dtype=np.float32)):
+            for i, key in enumerate(("ta:7", "tp:7", "air:7")):
+                sample = data[i]
+                self.assertEqual(sample["subjects"].item(), manifest["subjects"][key])
+                self.assertEqual(sample["metadata"]["subject_key"], key)
+
     def test_exactly_k_per_user_and_reproducible_under_reordering(self):
         rows = [row(subject, i) for subject in ("A", "B") for i in range(20)]
         selected, selection = select_support(rows, 3, 10)

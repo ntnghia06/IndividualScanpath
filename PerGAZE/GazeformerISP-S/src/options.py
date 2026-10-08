@@ -37,7 +37,7 @@ def parse_args(evaluation=False):
         parser.error("workers and batch limits must be nonnegative")
     args.eval_seed = args.seed if args.eval_seed is None else args.eval_seed
     if args.log_root is None:
-        args.log_root = Path(__file__).resolve().parents[1] / f"runs/k{args.k}_seed{args.seed}"
+        args.log_root = Path(__file__).resolve().parents[1] / f"runs/k{args.k}_seed{args.seed}_by_condition"
     if args.checkpoint is None:
         args.checkpoint = (args.log_root / "checkpoints/best.pth" if evaluation else
                            BASE_SRC.parents[2] / "pergaze_gazeformer_run/checkpoints/best.pth")

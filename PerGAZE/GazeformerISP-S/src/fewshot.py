@@ -14,9 +14,9 @@ import torch
 from tqdm import tqdm
 
 from adaptation import (select_support, build_manifest, expand_subject_embeddings,
-                        freeze_for_adaptation)
+                        freeze_for_adaptation, IDENTITY_SCHEME)
 from dataset.schema import read_records
-from dataset.text import GazeformerPerGAZE
+from adaptation_dataset import SubjectAdaptationDataset
 from geometry import GEOMETRY
 from models.gazeformer.model import GazeformerISP
 from models.loss import supervised_loss
@@ -106,7 +106,7 @@ def main():
 
     records = chosen + tests
     def make_data(split):
-        return GazeformerPerGAZE(records, manifest, args.img_dir, args.att_dir, split=split,
+        return SubjectAdaptationDataset(records, manifest, args.img_dir, args.att_dir, split=split,
             max_length=config["max_length"], blur_sigma=config["blur_sigma"],
             max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
     train_loader = loader(args, make_data("train"), shuffle=True)
@@ -115,6 +115,8 @@ def main():
     report_path = args.log_root / "report.json"
     report = {"config": resolved, "base_model_config": config, "provenance": provenance,
         "selection": selection, "subjects": manifest["subjects"], "geometry": GEOMETRY,
+        "subject_identity_scheme": IDENTITY_SCHEME,
+        "initialization_sources": "TA/TP use their own base population mean if available, otherwise legacy coco mean; VQA uses air mean",
         "support_samples": len(chosen), "test_samples": len(tests),
         "full_selected_support_training": args.max_batches == 0,
         "full_unseen_evaluation": args.eval_max_batches == 0,
@@ -127,6 +129,8 @@ def main():
     start, best = 0, -float("inf")
     if args.resume:
         state = load_checkpoint(last_path, device)
+        if state["manifest"].get("subject_identity_scheme") != IDENTITY_SCHEME:
+            raise ValueError("Old adaptation pooled TA/TP; start a new run with separate observer identities")
         if state["provenance"] != provenance or state["selection"] != selection:
             raise ValueError("Resume requires identical checkpoint, support/test files, k and seed")
         for key in ("k", "seed", "eval_seed", "lr", "batch", "init", "eval_repeat_num", "greedy", "max_batches", "eval_max_batches"):

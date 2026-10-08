@@ -57,6 +57,9 @@ class PerGAZE(Dataset):
     def __len__(self):
         return len(self.records)
 
+    def observer_key(self, row):
+        return subject_key(row)
+
     def __getitem__(self, index):
         record_index, row = self.records[index]
         with Image.open(image_path(self.image_dir, row)) as source:
@@ -88,13 +91,13 @@ class PerGAZE(Dataset):
         if count < self.max_length:
             targets[count:, 0] = 1
             action_mask[count] = 1  # supervise exactly one stop action
-        return {"images": image, "subjects": torch.tensor(self.manifest["subjects"][subject_key(row)]),
+        return {"images": image, "subjects": torch.tensor(self.manifest["subjects"][self.observer_key(row)]),
                 "attention_maps": torch.from_numpy(load_guidance(row, self.attention_dir, (width, height))),
                 "target_scanpaths": torch.from_numpy(targets), "durations": torch.from_numpy(durations),
                 "action_masks": torch.from_numpy(action_mask), "duration_masks": torch.from_numpy(duration_mask),
                 "fix_vectors": coords, "metadata": {"record_index": record_index, "name": row["name"],
                     "condition": row["condition"], "task": row["task"], "qid": row.get("qid"),
-                    "subject": row["subject"], "subject_key": subject_key(row)}}
+                    "subject": row["subject"], "subject_key": self.observer_key(row)}}
 
 
 def collate_func(batch):

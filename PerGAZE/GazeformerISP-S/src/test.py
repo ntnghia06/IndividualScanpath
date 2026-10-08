@@ -9,7 +9,8 @@ from pathlib import Path
 import torch
 
 from dataset.schema import read_records
-from dataset.text import GazeformerPerGAZE
+from adaptation_dataset import SubjectAdaptationDataset
+from adaptation import IDENTITY_SCHEME
 from fewshot import sha256, score, evaluate_seeded
 from geometry import GEOMETRY
 from models.gazeformer.model import GazeformerISP
@@ -30,6 +31,8 @@ def main():
     manifest = copy.deepcopy(checkpoint["manifest"])
     if manifest.get("geometry") != GEOMETRY or "adaptation_subjects" not in manifest:
         raise ValueError("Expected a GazeformerISP-S adapted checkpoint")
+    if manifest.get("subject_identity_scheme") != IDENTITY_SCHEME:
+        raise ValueError("This adaptation checkpoint pooled TA/TP observers; run finetuning again with separate identities")
     if sha256(args.test_file) != checkpoint["provenance"]["test_unseen"]:
         raise ValueError("test_unseen differs from the adapted run")
     config = checkpoint["config"]
@@ -55,7 +58,7 @@ def main():
     network = wrap_model(network, device, args.gpu_ids)
     tests = read_records(args.test_file)
     manifest["record_splits"] = ["validation"] * len(tests)
-    data = GazeformerPerGAZE(tests, manifest, args.img_dir, args.att_dir, split="validation",
+    data = SubjectAdaptationDataset(tests, manifest, args.img_dir, args.att_dir, split="validation",
         max_length=config["max_length"], blur_sigma=config["blur_sigma"],
         max_text_length=config["max_text_length"], text_embeddings=args.text_embeddings)
     summary, predictions = evaluate_seeded(network, loader(args, data, evaluation=True), args, device,

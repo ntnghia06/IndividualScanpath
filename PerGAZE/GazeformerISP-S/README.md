@@ -10,10 +10,15 @@ the full repository. Model dimensions, max_length, vocabulary, geometry and
 text backend are restored from the base checkpoint. No pretrained weight
 download is necessary: all model weights are loaded from that checkpoint.
 
-Current support data has six unseen observers: `air:JY`, `air:SC`, `air:YN`,
-`coco:7`, `coco:8`, `coco:9`. The base checkpoint has 23 seen observers.
-New embedding rows default to the mean of the original observers from the same
-dataset. `--init random` enables seeded random initialization instead.
+Current support data has nine unseen identities: `air:JY`, `air:SC`, `air:YN`,
+`ta:7`, `ta:8`, `ta:9`, `tp:7`, `tp:8`, `tp:9`. TA user 7 and TP user 7
+are different people: support sampling, embedding rows and evaluation groups
+are separate. With k=5, this selects 45 support scanpaths.
+The supplied legacy base checkpoint has 23 seen embedding rows and pooled
+TA/TP as `coco:*`. Those pretrained rows remain frozen. New TA/TP rows default
+to their own population mean if present, otherwise the legacy COCO mean;
+VQA rows use the AIR mean. Identical initialization does not share parameters.
+`--init random` enables seeded random initialization instead.
 
 All existing model parameters, old embedding rows, BatchNorm buffers and
 dropout behavior are frozen. The model stays in eval mode while autograd
@@ -39,8 +44,8 @@ Default data files are `dataset/PerGAZED/dataset/support.json` and
 learning rate 1e-3, train batch 2 and evaluation batch 4. Record IDs are sorted
 and each observer has a deterministic seeded sampler. Exactly k samples must
 be available for every support observer; duplicates and overlap between selected
-support and test are rejected. Sampling is pooled over that observer's available
-conditions/tasks, without imposing category quotas. The test set never provides
+support and test are rejected. Sampling is separate for each (condition, subject),
+across that observer's tasks without imposing task quotas. The test set never provides
 gradient updates. Its observers must have selected support examples.
 
 Supports CPU, one GPU, or DataParallel via `--gpu_ids 0 1`. Default CUDA mode
@@ -49,7 +54,9 @@ epoch, isolated from the training RNG. `--greedy` makes decoding deterministic.
 
 ## Outputs
 
-Default: `GazeformerISP-S/runs/k5_seed10/`.
+Default: `GazeformerISP-S/runs/k5_seed10_by_condition/`.
+Adaptation checkpoints from the previous pooled TA/TP implementation cannot
+be resumed or evaluated with this protocol; start a new adaptation run.
 
 - `checkpoints/checkpoint.pth`: last adapted model, optimizer and RNG for resume.
 - `checkpoints/best.pth`: highest-scoring adapted epoch (among epochs 1-3).
