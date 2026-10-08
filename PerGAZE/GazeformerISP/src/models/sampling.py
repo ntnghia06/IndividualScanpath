@@ -22,8 +22,8 @@ def sample_scanpaths(prediction, min_length=1, width=SCANPATH_SIZE[1], height=SC
     if not torch.isfinite(mu).all() or not torch.isfinite(variance).all() or (variance <= 0).any():
         raise FloatingPointError("Nonfinite or nonpositive duration parameters")
     times = (mu if greedy else mu + torch.randn_like(mu) * variance).exp()
-    if not torch.isfinite(times).all() or (times <= 0).any():
-        raise FloatingPointError("Duration sampling overflow/underflow; no numerical clipping is applied")
+    if not torch.isfinite(times).all():
+        raise FloatingPointError("Duration sampling produced nonfinite values")
     active = torch.ones_like(actions, dtype=torch.bool)
     if actions.shape[1] > 1:
         active[:, 1:] = (actions[:, :-1] == 0).cumsum(1) == 0

@@ -54,3 +54,10 @@ report.json. Old pooled-TA/TP adaptation runs must not be resumed.
 The original-sigma2 sampling revision requires FP32 caches produced using
 ToTensor -> Resize -> Normalize. Re-extract earlier caches; old adaptation runs
 must restart because their evaluation sampling protocol differs.
+
+
+Few-shot eval now uses original-MM/retrieval/duration metrics, including padding
+counts and subject retrieval matrices in report.json. Start a new adaptation run
+rather than resuming best-epoch selection from the previous evaluation protocol.
+Compatible adapted weights may be re-evaluated; the resulting summary includes
+its metric_protocol identifier.

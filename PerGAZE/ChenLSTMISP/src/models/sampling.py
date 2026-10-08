@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 
-def sample_scanpaths(prediction, min_length=1, width=320, height=240, greedy=False):
+def sample_scanpaths(prediction, min_length=1, width=320, height=240, greedy=False, duration_caps=None):
     original_probabilities = prediction["all_actions_prob"]
     if not torch.isfinite(original_probabilities).all() or (original_probabilities < 0).any():
         raise FloatingPointError("Invalid action probabilities")
@@ -19,8 +19,10 @@ def sample_scanpaths(prediction, min_length=1, width=320, height=240, greedy=Fal
     if not torch.isfinite(mu).all() or not torch.isfinite(variance).all() or (variance <= 0).any():
         raise FloatingPointError("Nonfinite or nonpositive duration parameters")
     times = (mu if greedy else mu + torch.randn_like(mu) * variance).exp()
-    if not torch.isfinite(times).all() or (times <= 0).any():
-        raise FloatingPointError("Duration sampling overflow/underflow; no numerical clipping is applied")
+    if duration_caps is not None:
+        times = torch.minimum(times.clamp_min(0), duration_caps[:, None])
+    if not torch.isfinite(times).all():
+        raise FloatingPointError("Duration sampling produced nonfinite values")
     active = torch.ones_like(actions, dtype=torch.bool)
     if actions.shape[1] > 1:
         active[:, 1:] = (actions[:, :-1] == 0).cumsum(1) == 0

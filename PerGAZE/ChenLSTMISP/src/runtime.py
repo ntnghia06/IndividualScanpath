@@ -42,6 +42,7 @@ def setup(args):
     manifest['object_to_head'] = OBJECT_TO_INDEX.copy()
     manifest['vqa_head'] = -1
     manifest['training_protocol'] = 'original_rl_v1'
+    manifest['metric_protocol'] = 'original_mm_retrieval_duration_v1'
     manifest['sources'] = {
         'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
         'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
@@ -69,7 +70,7 @@ def forward(model, batch):
 
 def evaluate(model, batches, args, device, limit=0, description="Evaluation"):
     model.eval()
-    metrics, rows = (Metrics(), [])
+    metrics, rows, targets = Metrics(), [], {}
     total = min(len(batches), limit) if limit else len(batches)
     with torch.no_grad(), tqdm(total=total, desc=description, unit="batch",
                                dynamic_ncols=True, mininterval=1, file=sys.stdout) as progress:
@@ -79,16 +80,19 @@ def evaluate(model, batches, args, device, limit=0, description="Evaluation"):
             for repeat in range(args.eval_repeat_num):
                 paths, *_ = sample_scanpaths(prediction, args.min_length, greedy=args.greedy)
                 for info, target, path in zip(batch['metadata'], batch['fix_vectors'], paths):
+                    targets[info['record_index']] = target
                     rows.append({**info, 'repeat': repeat, 'scanpath': path.tolist(), 'metrics': metrics.pair(target, path)})
             progress.set_postfix(samples=len(rows), refresh=False)
             progress.update(1)
-    return (summarize(rows), rows)
+    return (summarize(rows, targets, metrics), rows)
 
 def load_checkpoint(path, device):
     return torch.load(path, map_location=device, weights_only=True)
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
+    if getattr(args, 'resume', False) and saved_manifest.get('metric_protocol') != 'original_mm_retrieval_duration_v1':
+        raise ValueError('Resume metrics/duration protocol changed; use a new run (existing weights can still be evaluated)')
     if (saved_manifest.get('task_head_schema') != HEAD_SCHEMA
             or saved_manifest.get('object_to_head') != OBJECT_TO_INDEX):
         raise ValueError('Checkpoint lacks the 18 TP/TA object heads; start a new training run')

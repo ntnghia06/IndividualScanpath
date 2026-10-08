@@ -17,7 +17,7 @@ def main():
                              args, device, args.max_batches, description=f"Evaluate {args.split}")
     write_json(args.log_root / f"evaluation_{args.split}.json", summary)
     write_json(args.log_root / f"predictions_{args.split}.json", rows)
-    print(summary, flush=True)
+    print({"overall": summary["overall"], "retrieval_by_condition": summary["retrieval"]["by_condition"]}, flush=True)
 
 
 if __name__ == "__main__":

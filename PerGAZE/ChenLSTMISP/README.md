@@ -151,8 +151,8 @@ Gazeformer cached-v3 geometry changes do not alter ChenLSTM 320x240/30x40.
 RL now sums trial losses with batch-wide mask denominators. Sampling uses
 exp(mu + noise * sigma2) as in the original implementation. STOP-masked
 probabilities select actions; unmasked probabilities supply log-probabilities.
-Duration parameter and sample clamps are removed; invalid values stop with an
-explicit error. Checkpoints from the earlier RL protocol cannot resume training.
+Duration parameter clamps remain removed; RL clips duration at the original
+condition-specific positions described below. Invalid model parameters stop explicitly. Checkpoints from the earlier RL protocol cannot resume training.
 Gazeformer uses FP32 feature caches and ToTensor -> Resize -> Normalize.
 Its old feature caches must be re-extracted using --mode images --overwrite;
 casting old FP16 values to FP32 is not supported as a migration.
@@ -169,3 +169,32 @@ condition batches. Unknown TP/TA tasks fail explicitly. task_heads is int64,
 0..17 for objects and -1 for VQA; task mapping is saved in manifest/checkpoints.
 Old shared-head checkpoints require a new run. The additional 18 convolutions
 add 117,974,016 trainable parameters and increase GPU memory usage.
+
+
+## Original metric and duration protocol
+
+ScanMatch uses 16x12 bins. MultiMatch pads each scanpath to at least 3 fixations
+using (1,1,0.001) as in the original evaluator. Reports count padded target,
+prediction and pair comparisons, and retain null values with valid_count=0 when
+MultiMatch is undefined. The former temporal-score outlier cutoff is removed.
+
+Evaluation reports retrieval under retrieval: temporal ScanMatch score matrices,
+R@1/3/5/10 in percent, MRR and rank statistics, overall and by condition. Groups
+use condition + image + task + question ID + repeat. Candidate observers remain
+condition-specific. Reports include candidate counts and single-candidate queries.
+Duplicate ground truths for one observer use their maximum similarity. All-invalid
+rows are excluded, invalid cells rank as -1, and ties follow original reverse
+numpy argsort. Metrics describe only evaluated records if a batch limit is used.
+
+RL resamples nonfinite reward trials; a retry limit produces an explicit error
+instead of an endless loop. ChenLSTM TP/TA clips sampled duration to 3 seconds
+before creating reward paths and duration loss. ChenLSTM VQA and Gazeformer
+use raw sampled duration for reward, then clip only duration-loss input to
+0..100 seconds. Duration log-density and supervised/RL masks use the original
+formula with epsilon=1e-7. Eval/test sampling is not clipped, matching the original
+evaluation path. Structural invalid model parameters still cause explicit errors.
+
+Earlier checkpoint weights can be evaluated with this metric protocol when
+architecture-compatible. Start a new run instead of resuming old best-score,
+optimizer or RL state across the protocol change. Cached image features and
+sentence vectors do not need regeneration for this revision.

@@ -25,11 +25,21 @@ def rl_loss(network, batch, args, metrics):
     network.eval()
     prediction = forward(network, batch)
     rewards, log_probabilities = [], []
-    for _ in range(args.rl_sample_number):
-        paths, action_logp, times, active, duration_mask = sample_scanpaths(prediction, args.min_length)
-        rewards.append(torch.tensor([metrics.reward(gt, path) for gt, path in zip(batch["fix_vectors"], paths)],
-                                    device=batch["images"].device))
-        duration_logp = duration_log_prob(times.detach(), prediction)
+    attempts = 0
+    while len(rewards) < args.rl_sample_number:
+        attempts += 1
+        if attempts > args.rl_sample_number * 1000:
+            raise FloatingPointError("Could not obtain finite rewards after resampling")
+        caps = torch.tensor([3. if info["condition"] in ("present", "absent") else float("inf")
+                             for info in batch["metadata"]], device=batch["images"].device)
+        paths, action_logp, times, active, duration_mask = sample_scanpaths(
+            prediction, args.min_length, duration_caps=caps)
+        reward = torch.tensor([metrics.reward(gt, path) for gt, path in zip(batch["fix_vectors"], paths)],
+                              device=batch["images"].device)
+        if not torch.isfinite(reward).all():
+            continue  # Original trainers discard invalid reward trials and resample.
+        rewards.append(reward)
+        duration_logp = duration_log_prob(torch.where(caps[:, None] == 3., times.detach().clamp(0, 3), times.detach().clamp(0, 100)), prediction)
         log_probabilities.append((action_logp * active).sum(-1) / active.sum()
                                  + (duration_logp * duration_mask).sum(-1) / duration_mask.sum())
     rewards = torch.stack(rewards)
@@ -188,7 +198,9 @@ def main():
                   "seconds": time.monotonic() - started, "validation": summary,
                   "validation_score": score, "learning_rate": optimizer.param_groups[0]["lr"]}
         write_json(args.log_root / f"epoch_{epoch + 1:03d}.json", report)
-        print(report, flush=True)
+        print({key: value for key, value in report.items() if key != "validation"} |
+              {"validation_overall": summary["overall"] if summary else None,
+               "retrieval_by_condition": summary["retrieval"]["by_condition"] if summary else None}, flush=True)
 
 
 if __name__ == "__main__":

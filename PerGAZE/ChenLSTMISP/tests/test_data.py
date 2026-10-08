@@ -112,9 +112,10 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual(metrics.reward(target, np.empty((0, 3))), 0.)
         outlier = target.copy()
         outlier[:, 2] = 1000.
-        rejected = metrics.pair(target, outlier)
-        self.assertEqual(rejected["duration_outlier"], 1.)
-        self.assertEqual(rejected["ScanMatch_with_duration"], 0.)
+        with patch.object(metrics.scanmatches[1], "fixationToSequence", return_value=np.array([1, 2, 3])), \
+             patch.object(metrics.scanmatches[1], "match", return_value=(.75, None, None)):
+            self.assertEqual(metrics.scanmatch(target, outlier)[1], .75)
+
 
 
 if __name__ == "__main__":

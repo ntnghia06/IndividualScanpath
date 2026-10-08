@@ -29,7 +29,7 @@ class OriginalTrainingMathTest(unittest.TestCase):
         probabilities = torch.zeros(1, 1, count); probabilities[:, :, 1] = 1
         prediction = {"all_actions_prob": probabilities, "log_normal_mu": torch.full((1, 1), 100.),
                       "log_normal_sigma2": torch.ones(1, 1)}
-        with self.assertRaisesRegex(FloatingPointError, "overflow"):
+        with self.assertRaisesRegex(FloatingPointError, "nonfinite"):
             sample_scanpaths(prediction, greedy=True)
 
     def test_rl_uses_batch_mask_denominators_and_sum_over_trials(self):
@@ -42,7 +42,8 @@ class OriginalTrainingMathTest(unittest.TestCase):
         rewards = torch.tensor([[.2, .8], [.6, .1]])
         metrics = Mock(); metrics.reward.side_effect = rewards.flatten().tolist()
         args = SimpleNamespace(rl_sample_number=2, min_length=0, rl_baseline="mean")
-        batch = {"images": torch.zeros(2, 1), "fix_vectors": [np.zeros((1, 3))] * 2}
+        batch = {"images": torch.zeros(2, 1), "fix_vectors": [np.zeros((1, 3))] * 2,
+                 "metadata": [{"condition": "present"}, {"condition": "vqa"}]}
         sampled = [(paths, logp, torch.ones(2, 3), active, mask) for paths, logp in zip(samples, action)]
         with patch.object(train, "forward", return_value={}), \
              patch.object(train, "sample_scanpaths", side_effect=sampled), \
