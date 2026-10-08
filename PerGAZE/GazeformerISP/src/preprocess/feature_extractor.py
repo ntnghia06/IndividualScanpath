@@ -10,7 +10,7 @@ import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from dataset.schema import read_records
-from dataset.features import cache_path, FEATURE_FORMAT, load_features
+from dataset.features import cache_path, load_features, save_features, is_compressed
 from dataset.text import task_text
 from geometry import IMAGE_SIZE, FEATURE_GRID
 from opts import DATASET
@@ -35,17 +35,22 @@ class ImageInputs(Dataset):
 
 def extract_images(rows, args):
     from dataset.schema import image_path
-    entries, seen = {}, set()
+    entries, seen, migrated = {}, set(), 0
     for row in rows:
         output, relative = cache_path(args.feature_dir, args.img_dir, row)
         if relative in seen:
             continue
         seen.add(relative)
         if output.is_file() and not args.overwrite:
-            load_features(output, relative)
+            feature, width, height = load_features(output, relative)
+            if args.compression == "gzip" and not is_compressed(output):
+                save_features(output, relative, feature, width, height, compression="gzip")
+                migrated += 1
             continue
         entries[relative] = (image_path(args.img_dir, row), output, relative)
-    print(f"Images to extract: {len(entries)}", flush=True)
+    print(f"Images to extract: {len(entries)}; compressed existing caches: {migrated}; "
+          f"FP32 raw size: {len(seen) * 2048 * 24 * 32 * 4 / 2**30:.2f} GiB; "
+          f"compression={args.compression}", flush=True)
     if not entries:
         return
     from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
@@ -70,11 +75,8 @@ def extract_images(rows, args):
                 raise FloatingPointError("Nonfinite extracted image features")
             features = features.cpu().float()
             for feature, width, height, output, relative in zip(features, widths, heights, outputs, relatives):
-                target = Path(output)
-                temporary = target.with_suffix(".tmp")
-                torch.save({"format": FEATURE_FORMAT, "source": relative, "features": feature,
-                            "width": int(width), "height": int(height)}, temporary)
-                temporary.replace(target)
+                save_features(output, relative, feature, width, height, args.compression)
+
 
 
 def extract_text(rows, args):
@@ -113,6 +115,8 @@ def main():
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--storage_dtype", choices=("float32",), default="float32")
+    parser.add_argument("--compression", choices=("gzip", "none"), default="gzip",
+                        help="Lossless FP32 compression; none needs 6 MiB per image")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.batch < 1 or args.workers < 0:

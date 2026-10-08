@@ -84,7 +84,8 @@ class GazeformerTest(unittest.TestCase):
         from dataset.features import load_features, FEATURE_FORMAT
         saved = {"format": FEATURE_FORMAT, "source": "a.jpg", "width": 10, "height": 10,
                  "features": torch.ones(2048, 24, 32, dtype=torch.float16)}
-        with patch("torch.load", return_value=saved):
+        import io
+        with patch("pathlib.Path.open", return_value=io.BytesIO(b"PK")), patch("torch.load", return_value=saved):
             with self.assertRaisesRegex(ValueError, "re-extract"):
                 load_features("cache.pth", "a.jpg")
 

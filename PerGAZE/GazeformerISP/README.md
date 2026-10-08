@@ -117,3 +117,17 @@ for that pair; all five valid_count fields therefore use the same comparisons.
 Retrieval computes temporal ScanMatch regardless of MM validity. RL still rejects
 invalid MultiMatch reward trials, matching original pairs_eval. Old weights can
 be re-evaluated; start a new training run rather than mixing loss/metric protocols.
+
+
+## Lossless feature storage fix
+
+The extractor clones each feature before saving, so a slice never serializes the
+entire batch storage. Default --compression gzip compresses .pth containers
+losslessly: all feature values remain bit-identical FP32. Loaders transparently
+read both raw torch files and gzip containers. --compression none retains raw
+6 MiB files, which need approximately 34.5 GiB for the current 5,888-image dataset.
+Existing valid raw caches are compacted and compressed in place when extracting
+with gzip; no GPU extraction is needed for those images. Failed writes clean up
+partial .tmp files and report available disk space. If the previous failed run
+left the working disk full, remove only its feature cache folder or start a new
+session before preprocessing. Retain the sentence archive and model run files.
