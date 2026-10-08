@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 from dataset.schema import image_path
 
-FEATURE_FORMAT = "resnet50_coco_1024x768_v1"
+FEATURE_FORMAT = "resnet50_coco_tensor_resize_fp32_v2"
 
 
 def cache_path(feature_dir, image_dir, row):
@@ -17,7 +17,7 @@ def load_features(path, relative):
     saved = torch.load(path, map_location="cpu", weights_only=True)
     features = saved["features"]
     if (saved.get("format") != FEATURE_FORMAT or saved.get("source") != relative
-            or features.shape != (2048, 24, 32) or not torch.isfinite(features).all()
+            or features.dtype != torch.float32 or features.shape != (2048, 24, 32) or not torch.isfinite(features).all()
             or min(saved["width"], saved["height"]) <= 0):
-        raise ValueError(f"Invalid COCO feature cache: {path}")
+        raise ValueError(f"Invalid/obsolete COCO feature cache; re-extract with --overwrite: {path}")
     return features.float(), saved["width"], saved["height"]

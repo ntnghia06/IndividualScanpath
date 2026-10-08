@@ -163,7 +163,7 @@ class predict_head(nn.Module):
         t = F.relu(self.drt_layer_1(x))
         t = self.drt_layer_2(t)
         log_normal_mu = t[:, 0].view(batch, -1)
-        log_normal_sigma2 = torch.exp(t[:, 1].clamp(-10, 10)).view(batch, -1)
+        log_normal_sigma2 = torch.exp(t[:, 1]).view(batch, -1)
         x = F.relu(self.sal_layer_3(x))
         z = torch.cat([y.view(batch, self.action_map_num, -1), x.view(batch, self.action_map_num, -1)], dim=-1)
 

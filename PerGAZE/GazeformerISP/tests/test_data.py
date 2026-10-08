@@ -92,14 +92,14 @@ class PerGAZETest(unittest.TestCase):
         self.assertEqual(active.tolist(), [[True, False, False], [True, True, False]])
         self.assertEqual(duration.tolist(), [[False, False, False], [True, False, False]])
 
-    def test_duration_sampling_uses_standard_deviation(self):
+    def test_duration_sampling_matches_original_sigma2(self):
         probability = torch.zeros(1, 1, 769)
         probability[:, :, 1] = 1
         prediction = {"all_actions_prob": probability, "log_normal_mu": torch.zeros(1, 1),
                       "log_normal_sigma2": torch.full((1, 1), 4.)}
         with patch("torch.randn_like", side_effect=torch.ones_like):
             _, _, times, _, _ = sample_scanpaths(prediction)
-        self.assertAlmostEqual(float(times[0, 0]), float(np.exp(2)), places=5)
+        self.assertAlmostEqual(float(times[0, 0]), float(np.exp(4)), places=5)
 
     def test_sampling_frame_corners(self):
         probability = torch.zeros(1, 2, 769)

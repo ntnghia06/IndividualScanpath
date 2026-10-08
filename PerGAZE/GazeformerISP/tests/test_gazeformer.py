@@ -59,7 +59,7 @@ class GazeformerTest(unittest.TestCase):
                 folder.mkdir()
                 Image.new("RGB", (10, 10)).save(folder / "a.jpg")
                 target, relative = cache_path(root, root, row)
-                torch.save({"features": torch.ones(2048, 24, 32, dtype=torch.float16),
+                torch.save({"features": torch.ones(2048, 24, 32, dtype=torch.float32),
                             "format": FEATURE_FORMAT, "source": relative, "width": 10, "height": 10}, target)
             texts = [task_text(row) for row in rows]
             np.savez(root / "text.npz", tasks=np.asarray(texts), vectors=np.stack([
@@ -77,5 +77,24 @@ class GazeformerTest(unittest.TestCase):
             self.assertEqual(texts[1], "Search for the car in the image.")
 
     def test_old_checkpoint_geometry_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "geometry"):
+        with self.assertRaisesRegex(ValueError, "geometry|protocol"):
             restore_config(SimpleNamespace(), {"manifest": {}}, {})
+
+    def test_fp16_cache_cannot_be_reused_by_casting(self):
+        from dataset.features import load_features, FEATURE_FORMAT
+        saved = {"format": FEATURE_FORMAT, "source": "a.jpg", "width": 10, "height": 10,
+                 "features": torch.ones(2048, 24, 32, dtype=torch.float16)}
+        with patch("torch.load", return_value=saved):
+            with self.assertRaisesRegex(ValueError, "re-extract"):
+                load_features("cache.pth", "a.jpg")
+
+    def test_preprocessing_matches_original_tensor_resize_order(self):
+        from preprocess.feature_extractor import ImageInputs
+        import torchvision.transforms as T
+        image = Image.fromarray(np.random.default_rng(5).integers(0, 256, (13, 19, 3), dtype=np.uint8))
+        expected = T.Normalize([.485, .456, .406], [.229, .224, .225])(
+            T.Resize((768, 1024))(T.functional.to_tensor(image)))
+        with patch("preprocess.feature_extractor.Image.open", return_value=image):
+            actual, width, height, *_ = ImageInputs([("image.jpg", "cache.pth", "image.jpg")])[0]
+        self.assertEqual((width, height), (19, 13))
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)

@@ -35,9 +35,8 @@ The extractor defaults to the local dataset folder and includes train, test_seen
 support and test_unseen when present. --files explicitly selects JSON files.
 Frozen encoders use only image pixels and task text, never scanpath labels.
 --mode images/text/all selects the preprocessing stage. Existing valid image
-caches are reused; --overwrite replaces them. Default .pth storage is float16,
-with float32 model inputs; --storage_dtype float32 preserves full precision.
-A feature file takes about 3 MiB at float16. Cache filenames hash relative image
+caches are reused; --overwrite replaces them. Default .pth storage and model inputs are FP32.
+A feature file takes about 6 MiB. Cache filenames hash relative image
 paths, preventing collisions between conditions/tasks with identical filenames.
 
 Use --feature_dir and --text_embeddings to relocate caches in train/test.
@@ -67,3 +66,15 @@ This revision changes text backend, action grid and subject identities.
 Earlier online-backbone/705-action or pooled-TA/TP checkpoints cannot resume or
 be passed to GazeformerISP-S. Train a new v3 base model. GazeformerISP-S uses
 its exact original sentence archive and cached support/unseen image features.
+
+
+## Original RL and FP32 revision
+
+RL now sums trial losses with batch-wide mask denominators. Sampling uses
+exp(mu + noise * sigma2) as in the original implementation. STOP-masked
+probabilities select actions; unmasked probabilities supply log-probabilities.
+Duration parameter and sample clamps are removed; invalid values stop with an
+explicit error. Checkpoints from the earlier RL protocol cannot resume training.
+Gazeformer uses FP32 feature caches and ToTensor -> Resize -> Normalize.
+Its old feature caches must be re-extracted using --mode images --overwrite;
+casting old FP16 values to FP32 is not supported as a migration.

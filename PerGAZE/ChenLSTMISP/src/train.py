@@ -30,13 +30,13 @@ def rl_loss(network, batch, args, metrics):
         rewards.append(torch.tensor([metrics.reward(gt, path) for gt, path in zip(batch["fix_vectors"], paths)],
                                     device=batch["images"].device))
         duration_logp = duration_log_prob(times.detach(), prediction)
-        log_probabilities.append((action_logp * active).sum(-1) / active.sum(-1).clamp_min(1)
-                                 + (duration_logp * duration_mask).sum(-1) / duration_mask.sum(-1).clamp_min(1))
+        log_probabilities.append((action_logp * active).sum(-1) / active.sum()
+                                 + (duration_logp * duration_mask).sum(-1) / duration_mask.sum())
     rewards = torch.stack(rewards)
     baseline = (rewards.mean(0, keepdim=True) if args.rl_baseline == "mean" else
                 (rewards.sum(0, keepdim=True) - rewards) / (args.rl_sample_number - 1))
     advantage = rewards - baseline
-    return -(torch.stack(log_probabilities) * advantage.detach()).mean(), rewards.mean()
+    return -(torch.stack(log_probabilities) * advantage.detach()).sum(), rewards.mean()
 
 
 def smoke_test(args, records, manifest, device):

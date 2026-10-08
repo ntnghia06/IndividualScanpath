@@ -144,3 +144,15 @@ TP builds guidance from PerGAZE xywh bbox; VQA reads qid.npy, resized to 30x40
 and normalized; TA has zero guidance. TP/TA subjects now use separate tp:/ta:
 identities. Checkpoints with pooled coco: observers require a new training run.
 Gazeformer cached-v3 geometry changes do not alter ChenLSTM 320x240/30x40.
+
+
+## Original RL and FP32 revision
+
+RL now sums trial losses with batch-wide mask denominators. Sampling uses
+exp(mu + noise * sigma2) as in the original implementation. STOP-masked
+probabilities select actions; unmasked probabilities supply log-probabilities.
+Duration parameter and sample clamps are removed; invalid values stop with an
+explicit error. Checkpoints from the earlier RL protocol cannot resume training.
+Gazeformer uses FP32 feature caches and ToTensor -> Resize -> Normalize.
+Its old feature caches must be re-extracted using --mode images --overwrite;
+casting old FP16 values to FP32 is not supported as a migration.

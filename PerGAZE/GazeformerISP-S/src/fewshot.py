@@ -129,6 +129,8 @@ def main():
     start, best = 0, -float("inf")
     if args.resume:
         state = load_checkpoint(last_path, device)
+        if state["manifest"].get("adaptation_sampling_protocol") != "original_sigma2_v1":
+            raise ValueError("Old adaptation sampling protocol; start a new run")
         if state["manifest"].get("subject_identity_scheme") != IDENTITY_SCHEME:
             raise ValueError("Old adaptation pooled TA/TP; start a new run with separate observer identities")
         if state["provenance"] != provenance or state["selection"] != selection:

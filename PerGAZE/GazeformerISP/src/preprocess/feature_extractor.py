@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import torch
 from PIL import Image
+import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from dataset.schema import read_records
@@ -26,10 +27,9 @@ class ImageInputs(Dataset):
         path, output, relative = self.entries[index]
         with Image.open(path) as image:
             width, height = image.size
-            pixels = np.array(image.convert("RGB").resize((IMAGE_SIZE[1], IMAGE_SIZE[0]),
-                              Image.Resampling.BILINEAR), dtype=np.float32) / 255.
-        tensor = torch.from_numpy(pixels).permute(2, 0, 1)
-        tensor = (tensor - torch.tensor([.485, .456, .406])[:, None, None]) / torch.tensor([.229, .224, .225])[:, None, None]
+            tensor = T.functional.to_tensor(image.convert("RGB"))
+        tensor = T.Resize(IMAGE_SIZE)(tensor)
+        tensor = T.Normalize([.485, .456, .406], [.229, .224, .225])(tensor)
         return tensor, width, height, str(output), relative
 
 
@@ -66,8 +66,9 @@ def extract_images(rows, args):
             features = backbone(images.to(device))
             if features.shape[1:] != (2048, *FEATURE_GRID):
                 raise ValueError(f"Unexpected ResNet feature grid: {features.shape}")
-            # Storage only uses fp16; model inputs are converted back to fp32.
-            features = features.cpu().to(torch.float16 if args.storage_dtype == "float16" else torch.float32)
+            if not torch.isfinite(features).all():
+                raise FloatingPointError("Nonfinite extracted image features")
+            features = features.cpu().float()
             for feature, width, height, output, relative in zip(features, widths, heights, outputs, relatives):
                 target = Path(output)
                 temporary = target.with_suffix(".tmp")
@@ -111,7 +112,7 @@ def main():
     parser.add_argument("--gpu_ids", type=int, nargs="+")
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--workers", type=int, default=0)
-    parser.add_argument("--storage_dtype", choices=("float16", "float32"), default="float16")
+    parser.add_argument("--storage_dtype", choices=("float32",), default="float32")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.batch < 1 or args.workers < 0:

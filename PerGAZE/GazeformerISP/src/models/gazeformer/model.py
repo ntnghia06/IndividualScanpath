@@ -64,4 +64,4 @@ class GazeformerISP(nn.Module):
         logits = (logits * weights.unsqueeze(-1)).sum(2)
         return {"actions" if self.training else "all_actions_prob": logits if self.training else logits.softmax(-1),
                 "log_normal_mu": self.duration_mu(output).permute(1, 0, 2).squeeze(-1),
-                "log_normal_sigma2": self.duration_logvar(output).clamp(-10, 10).exp().permute(1, 0, 2).squeeze(-1)}
+                "log_normal_sigma2": self.duration_logvar(output).exp().permute(1, 0, 2).squeeze(-1)}

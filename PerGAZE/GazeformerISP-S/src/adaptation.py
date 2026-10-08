@@ -61,7 +61,8 @@ def build_manifest(base_manifest, chosen, tests):
     manifest.update(version=3, split_mode="explicit_files",
                     record_splits=["train"] * len(chosen) + ["validation"] * len(tests),
                     adaptation_subjects=sorted(support_users),
-                    subject_identity_scheme=IDENTITY_SCHEME)
+                    subject_identity_scheme=IDENTITY_SCHEME,
+                    adaptation_sampling_protocol="original_sigma2_v1")
     return manifest
 
 

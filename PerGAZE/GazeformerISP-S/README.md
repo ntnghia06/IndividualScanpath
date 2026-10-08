@@ -49,3 +49,8 @@ Import the whole run directory into Kaggle, restore it to RUN, retain original
 NPZ and image cache (or re-extract images), then add --resume with identical k,
 seed and input files. src/test.py re-evaluates adapted best.pth and appends to
 report.json. Old pooled-TA/TP adaptation runs must not be resumed.
+
+
+The original-sigma2 sampling revision requires FP32 caches produced using
+ToTensor -> Resize -> Normalize. Re-extract earlier caches; old adaptation runs
+must restart because their evaluation sampling protocol differs.

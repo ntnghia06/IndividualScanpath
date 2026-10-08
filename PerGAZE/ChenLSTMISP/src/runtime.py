@@ -35,6 +35,7 @@ def setup(args):
     validation_records = read_records(args.val_file)
     records = train_records + validation_records
     manifest = make_file_manifest(train_records, validation_records)
+    manifest['training_protocol'] = 'original_rl_v1'
     manifest['sources'] = {
         'train': {'path': str(args.train_file.resolve()), 'sha256': hashlib.sha256(args.train_file.read_bytes()).hexdigest()},
         'validation': {'path': str(args.val_file.resolve()), 'sha256': hashlib.sha256(args.val_file.read_bytes()).hexdigest()},
@@ -82,6 +83,8 @@ def load_checkpoint(path, device):
 
 def restore_config(args, checkpoint, manifest):
     saved_manifest = checkpoint['manifest']
+    if saved_manifest.get('training_protocol') != 'original_rl_v1':
+        raise ValueError('Checkpoint training protocol predates original RL normalization/sampling; start a new run')
     if saved_manifest["subjects"] != manifest["subjects"]:
         raise ValueError("Checkpoint subject identities differ (legacy TA/TP pooling); retrain")
     if saved_manifest.get('split_mode') != 'explicit_files':

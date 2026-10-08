@@ -31,6 +31,8 @@ def main():
     manifest = copy.deepcopy(checkpoint["manifest"])
     if manifest.get("geometry") != GEOMETRY or "adaptation_subjects" not in manifest:
         raise ValueError("Expected a GazeformerISP-S adapted checkpoint")
+    if manifest.get("adaptation_sampling_protocol") != "original_sigma2_v1":
+        raise ValueError("Old adaptation sampling protocol; start a new run")
     if manifest.get("subject_identity_scheme") != IDENTITY_SCHEME:
         raise ValueError("This adaptation checkpoint pooled TA/TP observers; run finetuning again with separate identities")
     if sha256(args.test_file) != checkpoint["provenance"]["test_unseen"]:
