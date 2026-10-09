@@ -50,3 +50,14 @@ counts and subject retrieval matrices in report.json. Start a new adaptation run
 rather than resuming best-epoch selection from the previous evaluation protocol.
 Compatible adapted weights may be re-evaluated; the resulting summary includes
 its metric_protocol identifier.
+
+
+## Google Colab (one GPU)
+
+Open kaggle_gazeformer_s_colab.ipynb, select a GPU runtime and mount Drive.
+Edit DATA_SOURCE, CHECKPOINT_SOURCE and TEXT_SOURCE. The notebook stages original
+images and model/text inputs to /content by default, always uses --gpu_ids 0,
+and saves checkpoints/report directly to the configured RUN on Drive after every
+epoch. Set RESUME=True after a session interruption with identical settings.
+Set COPY_DATA_TO_LOCAL=False to read images directly from Drive. No image features
+are precomputed or cached. Only the original sentence embedding NPZ is required.
