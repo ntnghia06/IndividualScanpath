@@ -214,8 +214,8 @@ be re-evaluated; start a new training run rather than mixing loss/metric protoco
 
 Open kaggle_chenlstm_colab.ipynb, select a GPU runtime and mount Drive. Set
 DATA_SOURCE to the dataset folder containing train.json, test_seen.json, images
-and attention_reasoning. Inputs are staged to /content by default; set
-COPY_DATA_TO_LOCAL=False to read directly from Drive. Only --gpu_ids 0 is used.
+and attention_reasoning. JSON files, images and attention maps are read directly
+from Drive without staging a dataset copy to /content. Only --gpu_ids 0 is used.
 Defaults: seed 1, batch 2, max_length 16, 5 supervised + 5 RL epochs. The main
 train cell downloads ImageNet ResNet50 weights if missing; no SentenceTransformer
 or feature cache is used. RUN is on Drive so checkpoints/reports persist after
