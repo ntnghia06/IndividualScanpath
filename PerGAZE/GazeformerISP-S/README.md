@@ -61,3 +61,15 @@ and saves checkpoints/report directly to the configured RUN on Drive after every
 epoch. Set RESUME=True after a session interruption with identical settings.
 Set COPY_DATA_TO_LOCAL=False to read images directly from Drive. No image features
 are precomputed or cached. Only the original sentence embedding NPZ is required.
+
+
+## Colab base run folder
+
+In kaggle_gazeformer_s_colab.ipynb, BASE_RUN defaults to
+MyDrive/PerGAZE/pergaze_gazeformer_run_online. CHECKPOINT_NAME selects best.pth
+(default), checkpoint.pth or supervised.pth under its checkpoints/ directory.
+Checkpoint/text NPZ are read directly from Drive. TEXT_SOURCE=None looks in the
+run folder and its parent using hparams' saved basename and manifest's SHA-256.
+Upload the original text archive separately if it was outside the exported run.
+Set TEXT_SOURCE manually for another location. Metadata Kaggle paths are never
+assumed to exist in Colab; the checkpoint's own hash is also checked by the script.
