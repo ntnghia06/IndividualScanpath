@@ -64,3 +64,17 @@ Outputs include hparams.json, manifest.json, epoch_*.json and checkpoints/
 checkpoint.pth, best.pth and supervised.pth. Best is selected by the harmonic
 mean of the two ScanMatch validation means. Test writes report and prediction
 JSON files. TensorBoard and grouped observer batching remain outside this change.
+
+
+## Google Colab (one GPU)
+
+Use kaggle_gazeformer_colab.ipynb. Dataset JSON/images are read directly from
+MyDrive/PerGAZE/dataset, with no input copy or image feature cache. Defaults:
+seed 10, train/eval batch 1, max_length 16 and 5 supervised + 5 RL epochs.
+The notebook prepares the pretrained SentenceTransformer 768D NPZ once on Drive;
+include support/test_unseen text for later ISP-S. COCO ResNet50 runs online in
+each batch and stays frozen. RUN defaults to MyDrive/PerGAZE/pergaze_gazeformer_run,
+and TEXT_FILE to MyDrive/PerGAZE/gazeformer_task_embeddings.npz, matching the
+GazeformerISP-S Colab defaults. Checkpoints/reports persist on Drive. RESUME=True
+preserves the original NPZ and restores the saved run; keep input and training
+settings consistent. The logged runner exposes original subprocess tracebacks.
