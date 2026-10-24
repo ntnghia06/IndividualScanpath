@@ -1,0 +1,2 @@
+-r ../../../ChenLSTMISP/requirements.txt
+scikit-image>=0.20
